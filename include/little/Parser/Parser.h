@@ -21,8 +21,8 @@ SyntaxTree Expr(Stream& in) {
     Seq("input", {S("input()")}),
     Seq("idx", {Id, T(Expr)}),
     Seq("call", {Id, PCSL("args", Expr)}),
-    P(Seq("binop", {Expr, Binop, Expr})),
-    P(Seq("unaryop", {Unaryop, Expr})), Id
+    P(Seq("binexpr", {Expr, Binop, Expr})),
+    P(Seq("unaryexpr", {Unaryop, Expr})), Id
   }) (in);
 }
 
@@ -30,7 +30,7 @@ SyntaxTree Stmt(Stream& in) {
   return
   Choice("stmt", {
     Seq("scall", {Id, PCSL("args", Expr)}),
-    B(Star("stmts", R1(Seq(".", {Stmt, S("\n")} )))),
+    B(Star("stmts", Stmt)),
     CSL("decls", Decl),
     R2(Seq(".", {S("array"), CSL("arraydecls", Seq("arraydecl", {Id, T(Expr)}))})),
     Seq("print", {S("print"), PCSL("args", Expr)}),
