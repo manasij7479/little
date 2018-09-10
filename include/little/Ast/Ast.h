@@ -1,3 +1,6 @@
+#ifndef LITTLE_AST_H
+#define LITTLE_AST_H
+
 namespace little {
   class Node {
   public :
@@ -62,3 +65,4 @@ namespace little {
 
   };
 }
+#endif
