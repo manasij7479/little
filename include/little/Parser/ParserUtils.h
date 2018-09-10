@@ -93,6 +93,8 @@ struct SyntaxTree {
   std::map<std::string, std::string> Attributes;
   std::vector<SyntaxTree> Children;
 
+  bool partial = false;
+
   explicit operator bool() const {
     return Node != "";
   }
@@ -175,7 +177,9 @@ struct SyntaxTree {
     auto s = indent(indent_, mark);
     out << s << Node << "  ";
     for (auto x : Attributes) {
-      out <<  "(" << x.first << " : " << x.second << ") ";
+      if (x.first != "error" || Node == "") {
+        out <<  "(" << x.first << " : " << x.second << ") ";
+      }
     } out << "\n";
 
     for (int i = 0; i < Children.size(); ++i) {
@@ -200,15 +204,20 @@ SyntaxTree Error(std::string msg, int index = -1) {
 
 Action Choice(std::string name, std::vector<Action> Actions) {
   return [name, Actions](Stream& in) {
+    std::string errors;
     for (auto a : Actions) {
       StreamRAII s(in);
       auto t = a(in);
       if (t) {
         s.invalidate();
         return SyntaxTree{name, {}, {t}};
+      } else {
+        if (t.partial) {
+          errors +=  t.error() + " or  \n";
+        }
       }
     }
-    return Error(name, in.index);
+    return Error(errors + " in " + name, in.index);
     // TODO: Better error message
   };
 }
@@ -221,7 +230,19 @@ Action Seq(std::string name, std::deque<Action> Actions) {
     for (auto a : Actions) {
       auto t = a(in);
       if (!t) {
-        return Error("! " + t.error() + " in " + name, in.index);
+        // std::cout << t.error () << in.index << std::endl;
+        std::string extra;
+        if (!result.Children.empty()) {
+          auto t = result.Children.back();
+          if (t.Attributes.find("error") != t.Attributes.end()) {
+            extra += " or \n" + t.error();
+          }
+        }
+        auto e = Error(t.error() + " in " + name + extra, in.index);
+        if (!result.Children.empty()) {
+          e.partial = true;
+        }
+        return e;
       }
       result.Children.push_back(t);
     }
@@ -237,6 +258,7 @@ Action Star(std::string name, Action A) {
       StreamRAII s(in);
       auto t = A(in);
       if (!t) {
+        result.Attributes["error"] = t.error();
         break;
       } else {
         s.invalidate();
