@@ -48,8 +48,8 @@ SyntaxTree Stmt(Stream& in) {
 Action ParseLittleProgram() {
   auto Function = Seq("function", { Type, Id,
     PCSLE("args", Decl), B(Star("body", Stmt))});
-  auto Program = Plus("functions", Function);
-  return Program; 
+  auto Program = Plus("program", Function);
+  return Program;
 }
 
 }
