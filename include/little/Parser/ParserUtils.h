@@ -7,6 +7,7 @@
 #include <iostream>
 #include <ostream>
 #include <cassert>
+#include <deque>
 
 namespace mm {
 
@@ -145,7 +146,7 @@ struct SyntaxTree {
     assert(Children.size() >= 1);
     for (int i = 1; i < Children.size(); ++i) {
       Children[i - 1] = Children[i];
-    } 
+    }
     Children.pop_back();
   }
 
@@ -153,7 +154,7 @@ struct SyntaxTree {
     assert(Children.size() >= 2);
     for (int i = 2; i < Children.size(); ++i) {
       Children[i - 1] = Children[i];
-    } 
+    }
     Children.pop_back();
   }
 
@@ -172,10 +173,11 @@ struct SyntaxTree {
 
   void dump(std::ostream& out, int indent_ = 0, std::vector<int> mark = {}) {
     auto s = indent(indent_, mark);
-    out << s << Node << "\n";
+    out << s << Node << "  ";
     for (auto x : Attributes) {
-      out << s <<  "(" << x.first << " : " << x.second << ")\n";
-    }
+      out <<  "(" << x.first << " : " << x.second << ") ";
+    } out << "\n";
+
     for (int i = 0; i < Children.size(); ++i) {
       auto C = Children[i];
       if (Children.size() >= 2 && i != Children.size() - 1) mark.push_back(indent_);
@@ -211,11 +213,11 @@ Action Choice(std::string name, std::vector<Action> Actions) {
   };
 }
 
-Action Seq(std::string name, std::vector<Action> Actions) {
+Action Seq(std::string name, std::deque<Action> Actions) {
   return [name, Actions](Stream& in) {
     StreamRAII s(in);
     SyntaxTree result{name, {}, {}};
-    
+
     for (auto a : Actions) {
       auto t = a(in);
       if (!t) {
@@ -229,7 +231,7 @@ Action Seq(std::string name, std::vector<Action> Actions) {
 };
 
 Action Star(std::string name, Action A) {
-  return [name, A](Stream& in) { 
+  return [name, A](Stream& in) {
     SyntaxTree result{name, {}, {}};
     while (true) {
       StreamRAII s(in);
@@ -264,7 +266,7 @@ Action Pr2(Action A) {
 Action R1(Action A) {
   return [A] (Stream& in) {
     auto t = A(in);
-    if (t) t = t.getFirstChild(); 
+    if (t) t = t.getFirstChild();
     return t;
   };
 }
@@ -272,7 +274,7 @@ Action R1(Action A) {
 Action R2(Action A) {
   return [A] (Stream& in) {
     auto t = A(in);
-    if (t) t = t.getSecondChild(); 
+    if (t) t = t.getSecondChild();
     return t;
   };
 }
@@ -280,17 +282,17 @@ Action R2(Action A) {
 Action RM1(Action A) {
  return [A] (Stream& in) {
     auto t = A(in);
-    if (t) t.removeFirstChild(); 
+    if (t) t.removeFirstChild();
     return t;
-  }; 
+  };
 }
 
 Action RM2(Action A) {
  return [A] (Stream& in) {
     auto t = A(in);
-    if (t) t.removeSecondChild(); 
+    if (t) t.removeSecondChild();
     return t;
-  }; 
+  };
 }
 
 Action Plus(std::string name, Action A) {
@@ -309,6 +311,10 @@ Action Opt(std::string name, Action A) {
     }
     return result;
   };
+}
+
+Action ROpt(std::string name, Action A) {
+  return R1(Opt(name, A));
 }
 
 Action Empty(std::string name) {
@@ -374,6 +380,17 @@ Action T(Action A) {
 // <A>
 Action A(Action A) {
   return R2(Seq("nest1", {S("<"), A , S(">")}));
+}
+
+Action PSeq(std::string prefix, std::deque<Action> Actions) {
+  Actions.push_front(S(prefix));
+  return RM1(Seq(prefix, Actions));
+}
+
+Action PFX(std::string prefix, Action A) {
+  std::deque<Action> Actions = {A};
+  Actions.push_front(S(prefix));
+  return RM1(Seq(prefix, Actions));
 }
 
 }

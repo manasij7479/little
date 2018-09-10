@@ -16,7 +16,7 @@ auto Decl = Seq("decl", {Type, Id});
 SyntaxTree Expr(Stream& in) {
   return
   Choice("expr", {
-    S("true"), S("false"), Num,
+    SS("bool", {"true", "false"}), Num,
     P(Seq("cond", {Expr, S("?"), Expr, S(":"), Expr})),
     Seq("sizeof", {S("sizeof"), P(Id)}),
     Seq("input", {S("input()")}),
@@ -30,18 +30,18 @@ SyntaxTree Expr(Stream& in) {
 SyntaxTree Stmt(Stream& in) {
   return
   Choice("stmt", {
-    RM1(Seq("if", {S("if"), P(Expr), Stmt, Opt("else", RM1(Seq("else", {S("else"), Stmt})))})),
-    RM1(Seq("while", {S("while"), P(Expr), Stmt})),
-    RM1(Seq("for", {S("for"), P(RM2(Seq("forcond", {Id, S(":") , Expr}))), Stmt})),
+    PSeq("if", {P(Expr), Stmt, Opt("else", PFX("else", Stmt))}),
+    PSeq("while", {P(Expr), Stmt}),
+    PSeq("for", {P(RM2(Seq("forcond", {Id, S(":") , Expr}))), Stmt}),
     Seq("scall", {Id, PCSL("args", Expr)}),
     B(Star("stmts", Stmt)),
     R2(Seq(".", {S("array"), CSL("arraydecls", Seq("arraydecl", {Id, T(Expr)}))})),
     Seq("decls", {Type, CSL("ids", Id)}),
-    Seq("print", {S("print"), PCSL("args", Expr)}),
+    PFX("print", PCSL("args", Expr)),
     RM2(Seq("store", {Id, T(Expr), AssignOp, Expr})),
     RM2(Seq("assign", {Id, AssignOp, Expr})),
     // TODO comments, maybe handle as a preprocessing step?
-    RM1(Seq("return", {S("return"), Opt("returnexpr", Expr)})),
+    PFX("return", Opt("returnexpr", Expr)),
   }) (in);
 }
 
