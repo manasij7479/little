@@ -158,20 +158,30 @@ struct SyntaxTree {
     Children.pop_back();
   }
 
-  std::string indent(int indent) {
+  std::string indent(int indent, std::vector<int> mark) {
     std::string result = "";
     while (indent--) result += "  ";
+    if (result.length() >= 2) {
+      result[result.length() - 1] = '-';
+      result[result.length() - 2] = '\\';
+    }
+    for (auto m : mark) {
+      result[2*m] = '|';
+    }
     return result;
   }
 
-  void dump(std::ostream& out, int indent_ = 0) {
-    auto s = indent(indent_);
+  void dump(std::ostream& out, int indent_ = 0, std::vector<int> mark = {}) {
+    auto s = indent(indent_, mark);
     out << s << Node << "\n";
     for (auto x : Attributes) {
       out << s <<  "(" << x.first << " : " << x.second << ")\n";
     }
-    for (auto C : Children) {
-      C.dump(out, indent_ + 1);
+    for (int i = 0; i < Children.size(); ++i) {
+      auto C = Children[i];
+      if (Children.size() >= 2 && i != Children.size() - 1) mark.push_back(indent_);
+      C.dump(out, indent_ + 1, mark);
+      if (Children.size() >= 2 && i != Children.size() - 1) mark.pop_back();
     }
   }
 };
@@ -331,14 +341,14 @@ Action CSL(std::string name, Action A) {
             R2(Seq("nest2", {S(","), A})) )}));
 }
 
-// Parenthesized Comma Separated Non-Empty List
-Action PCSL(std::string name, Action A) {
-  return R2(Seq("nest1", {S("("), CSL(name, A), S(")")}));
-}
-
 // Parenthesize (A)
 Action P(Action A) {
   return R2(Seq("nest1", {S("("), A , S(")")}));
+}
+
+// Parenthesized Comma Separated Non-Empty List
+Action PCSL(std::string name, Action A) {
+  return P(CSL(name, A));
 }
 // Brace for impact {A}
 Action B(Action A) {
@@ -349,6 +359,12 @@ Action B(Action A) {
 Action T(Action A) {
   return R2(Seq("nest1", {S("["), A , S("]")}));
 }
+
+// <A>
+Action A(Action A) {
+  return R2(Seq("nest1", {S("<"), A , S(">")}));
+}
+
 }
 
 #endif

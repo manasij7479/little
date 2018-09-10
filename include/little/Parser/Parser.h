@@ -7,7 +7,7 @@ namespace little {
 
 auto Id = ParseIdentifier;
 auto Num = ParseNumber;
-auto Type = Choice("type", {S("bool"), S("int"), S("array"), S("void")});
+auto Type = SS("type", {"bool", "int", "array", "void"});
 auto Binop = SS("binop", {"+", "-", "*", "^", "/", "%", "&", "|", "==", "!=", ">=", ">", "<=", "<"});
 auto Unaryop = SS("unaryop", {"!", "-"});
 auto Decl = Seq("decl", {Type, Id});
