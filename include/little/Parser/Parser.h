@@ -15,14 +15,14 @@ auto Decl = Seq("decl", {Type, Id});
 SyntaxTree Expr(Stream& in) {
   return
   Choice("expr", {
-    S("true"), S("false"), Num, Id,
+    S("true"), S("false"), Num,
     P(Seq("cond", {Expr, S("?"), Expr, S(":"), Expr})),
     Seq("sizeof", {S("sizeof"), P(Id)}),
     Seq("input", {S("input()")}),
     Seq("idx", {Id, T(Expr)}),
     Seq("call", {Id, PCSL("args", Expr)}),
     P(Seq("binop", {Expr, Binop, Expr})),
-    P(Seq("unaryop", {Unaryop, Expr}))
+    P(Seq("unaryop", {Unaryop, Expr})), Id
   }) (in);
 }
 

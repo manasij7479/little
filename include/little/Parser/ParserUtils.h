@@ -11,7 +11,6 @@
 namespace mm {
 
 struct Stream {
-
   Stream(const char* p, int i, int max) : ptr(p), index(i), bounds(max) {}
   const char *ptr;
   int index;
@@ -199,6 +198,7 @@ Action Choice(std::string name, std::vector<Action> Actions) {
       }
     }
     return Error(name, in.index);
+    // TODO: Better error message
   };
 }
 
