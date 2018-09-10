@@ -1,5 +1,5 @@
-#ifndef MM_PARSER_H
-#define MM_PARSER_H
+#ifndef LITTLE_PARSER_H
+#define LITTLE_PARSER_H
 #include "ParserUtils.h"
 #include "ParseTokens.h"
 
