@@ -10,6 +10,7 @@ auto Num = ParseNumber;
 auto Type = SS("type", {"bool", "int", "array", "void"});
 auto Binop = SS("binop", {"+", "-", "*", "^", "/", "%", "&", "|", "==", "!=", ">=", ">", "<=", "<"});
 auto Unaryop = SS("unaryop", {"!", "-"});
+auto AssignOp = S(":=");
 auto Decl = Seq("decl", {Type, Id});
 
 SyntaxTree Expr(Stream& in) {
@@ -35,10 +36,10 @@ SyntaxTree Stmt(Stream& in) {
     Seq("scall", {Id, PCSL("args", Expr)}),
     B(Star("stmts", Stmt)),
     R2(Seq(".", {S("array"), CSL("arraydecls", Seq("arraydecl", {Id, T(Expr)}))})),
-    CSL("decls", Decl),
+    Seq("decls", {Type, CSL("ids", Id)}),
     Seq("print", {S("print"), PCSL("args", Expr)}),
-    RM2(Seq("store", {Id, T(Expr), S(":="), Expr})),
-    RM2(Seq("assign", {Id, S(":="), Expr})),
+    RM2(Seq("store", {Id, T(Expr), AssignOp, Expr})),
+    RM2(Seq("assign", {Id, AssignOp, Expr})),
     // TODO comments, maybe handle as a preprocessing step?
     RM1(Seq("return", {S("return"), Opt("returnexpr", Expr)})),
   }) (in);
@@ -46,7 +47,7 @@ SyntaxTree Stmt(Stream& in) {
 
 Action ParseLittleProgram() {
   auto Function = Seq("function", { Type, Id,
-    PCSL("args", Decl), B(Star("body", Stmt))});
+    PCSLE("args", Decl), B(Star("body", Stmt))});
   auto Program = Plus("functions", Function);
   return Program; 
 }

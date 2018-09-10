@@ -311,6 +311,13 @@ Action Opt(std::string name, Action A) {
   };
 }
 
+Action Empty(std::string name) {
+  return [name] (Stream& in) {
+    SyntaxTree t{name, {}, {}};
+    return t;
+  };
+}
+
 // Parse Exact String
 Action S(std::string name) {
   return [name] (Stream& in) {
@@ -349,6 +356,11 @@ Action P(Action A) {
 Action PCSL(std::string name, Action A) {
   return P(CSL(name, A));
 }
+
+Action PCSLE(std::string name, Action A) {
+  return R1(Choice(".", {PCSL(name, A), P(Empty(name))}));
+}
+
 // Brace for impact {A}
 Action B(Action A) {
   return R2(Seq("nest1", {S("{"), A , S("}")}));
