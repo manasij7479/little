@@ -19,7 +19,7 @@ SyntaxTree Expr(Stream& in) {
     P(Seq("cond", {Expr, S("?"), Expr, S(":"), Expr})),
     Seq("sizeof", {S("sizeof"), P(Id)}),
     Seq("input", {S("input()")}),
-    Seq("idx", {Id, T(Expr)}),
+    Seq("load", {Id, T(Expr)}),
     Seq("call", {Id, PCSL("args", Expr)}),
     P(Seq("binexpr", {Expr, Binop, Expr})),
     P(Seq("unaryexpr", {Unaryop, Expr})), Id
@@ -29,17 +29,18 @@ SyntaxTree Expr(Stream& in) {
 SyntaxTree Stmt(Stream& in) {
   return
   Choice("stmt", {
-    Seq("scall", {Id, PCSL("args", Expr)}),
-    B(Star("stmts", Stmt)),
-    CSL("decls", Decl),
-    R2(Seq(".", {S("array"), CSL("arraydecls", Seq("arraydecl", {Id, T(Expr)}))})),
-    Seq("print", {S("print"), PCSL("args", Expr)}),
     RM1(Seq("if", {S("if"), P(Expr), Stmt, Opt("else", RM1(Seq("else", {S("else"), Stmt})))})),
     RM1(Seq("while", {S("while"), P(Expr), Stmt})),
     RM1(Seq("for", {S("for"), P(RM2(Seq("forcond", {Id, S(":") , Expr}))), Stmt})),
+    Seq("scall", {Id, PCSL("args", Expr)}),
+    B(Star("stmts", Stmt)),
+    R2(Seq(".", {S("array"), CSL("arraydecls", Seq("arraydecl", {Id, T(Expr)}))})),
+    CSL("decls", Decl),
+    Seq("print", {S("print"), PCSL("args", Expr)}),
+    RM2(Seq("store", {Id, T(Expr), S(":="), Expr})),
     RM2(Seq("assign", {Id, S(":="), Expr})),
     // TODO comments, maybe handle as a preprocessing step?
-    RM1(Seq("return", {S("return"), Opt("returnexpr", Expr)}))
+    RM1(Seq("return", {S("return"), Opt("returnexpr", Expr)})),
   }) (in);
 }
 

@@ -10,6 +10,13 @@
 
 namespace mm {
 
+// Missing Features
+// * Sensible error messages for Choice
+// * Cache results when backtracking
+// * Match Regex
+// * index <-> (line, column) mapping
+// * Policy based whitespace skipping
+
 struct Stream {
   Stream(const char* p, int i, int max) : ptr(p), index(i), bounds(max) {}
   const char *ptr;
@@ -50,20 +57,12 @@ struct Stream {
     else return false;
   }
 
-  std::string fixed(std::vector<std::string> Choices) {
-    for (auto Choice : Choices) {
-      if (fixed(Choice)) {
-        return Choice;
-      }
-    }
-    return "";
-  }
   void skipWhiteSpace() {
     while (index < bounds && std::isspace(ptr[index]))
       index++;
   }
 
-  int getIndex() {
+  int getIndex() const {
     return index;
   }
 
