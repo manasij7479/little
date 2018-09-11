@@ -6,6 +6,7 @@ using namespace mm;
 namespace little {
   SyntaxTree ParseIdentifier(Stream& in) {
     bool firstChar = true;
+    StreamRAII s(in);
     std::string tok = in.loop([&firstChar](char in) {
       if (firstChar) {
         firstChar = false;
@@ -20,6 +21,7 @@ namespace little {
       }
     });
     if (tok != "") {
+      s.invalidate();
       return SyntaxTree{"id", {{"val", tok}}, {}};
     } else {
       return Error("Expected Identifier", in.getIndex());
@@ -50,8 +52,32 @@ namespace little {
   }
 
   SyntaxTree ParseStringLiteral(Stream& in) {
-    throw(std::runtime_error("Unimplemented"));
+    int state = 0;
+    // 0 = on start,
+    // 1 = on opening "
+    // 2 = on closing "
+    StreamRAII s(in);
+    std::string result = in.loop([&state](char in) {
+      if (state == 0) {
+        state = 1;
+        return in == '\"';
+      } else if (state == 1) {
+        if (in == '\"') {
+          state = 2;
+        }
+        return true;
+      } else {
+        return false;
+      }
+    });
+
+    if (result != "" && result[0] == '\"' && result[result.length() - 1] == '\"') {
+      s.invalidate();
+      return SyntaxTree{"str", {{"val", result}}, {}};
+    } else {
+      return Error("Expected String Literal", in.getIndex());
+    }
   }
-  
+
 }
 #endif

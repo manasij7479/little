@@ -7,6 +7,7 @@ namespace little {
 
 auto Id = ParseIdentifier;
 auto Num = ParseNumber;
+auto Str = ParseStringLiteral;
 auto Type = SS("type", {"bool", "int", "array", "void"});
 auto Binop = SS("binop", {"+", "-", "*", "^", "/", "%", "&", "|", "==", "!=", ">=", ">", "<=", "<"});
 auto Unaryop = SS("unaryop", {"!", "-"});
@@ -19,11 +20,11 @@ SyntaxTree Expr(Stream& in) {
     SS("bool", {"true", "false"}), Num,
     P(Seq("cond", {Expr, S("?"), Expr, S(":"), Expr})),
     Seq("sizeof", {S("sizeof"), P(Id)}),
-    Seq("input", {S("input()")}),
+    // Seq("input", {S("input()")}),
     Seq("load", {Id, T(Expr)}),
-    Seq("call", {Id, PCSL("args", Expr)}),
+    Seq("call", {Id, PCSLE("args", Expr)}),
     P(Seq("binexpr", {Expr, Binop, Expr})),
-    P(Seq("unaryexpr", {Unaryop, Expr})), Id
+    P(Seq("unaryexpr", {Unaryop, Expr})), Id, Str
   }) (in);
 }
 
@@ -33,13 +34,14 @@ SyntaxTree Stmt(Stream& in) {
     PSeq("if", {P(Expr), Stmt, Opt("else", PFX("else", Stmt))}),
     PSeq("while", {P(Expr), Stmt}),
     PSeq("for", {P(RM2(Seq("forcond", {Id, S(":") , Expr}))), Stmt}),
-    Seq("scall", {Id, PCSL("args", Expr)}),
+    Seq("scall", {Id, PCSLE("args", Expr)}),
     B(Star("stmts", Stmt)),
+    RM2(Seq("assign", {Id, AssignOp, Expr})),
     R2(Seq(".", {S("array"), CSL("arraydecls", Seq("arraydecl", {Id, T(Expr)}))})),
     Seq("decls", {Type, CSL("ids", Id)}),
     PFX("print", PCSL("args", Expr)),
     RM2(Seq("store", {Id, T(Expr), AssignOp, Expr})),
-    RM2(Seq("assign", {Id, AssignOp, Expr})),
+
     // TODO comments, maybe handle as a preprocessing step?
     PFX("return", Opt("returnexpr", Expr)),
   }) (in);

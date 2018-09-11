@@ -12,11 +12,10 @@
 namespace mm {
 
 // Missing Features
-// * Sensible error messages for Choice
-// * Cache results when backtracking
-// * Match Regex
-// * index <-> (line, column) mapping
-// * Policy based whitespace skipping
+// * Sensible error messages for Choice (sort of done)
+// * Cache results when backtracking (see: packrat parsing)
+// * Match Regex (Shouldn't be too difficult)
+// * Policy based whitespace skipping (why?)
 
 struct Stream {
   Stream(const char* p, int i, int max) : ptr(p), index(i), bounds(max) {}

@@ -8,35 +8,36 @@
 #include <iostream>
 
 namespace little {
-// removes comments and [\\, \n] pairs
+// removes comments and [\\, \n wp*] pairs
 class Preprocessor {
 public:
   Preprocessor(std::string filename) {
     std::ifstream in(filename);
     if (!in) throw std::runtime_error("File " + filename + " not found.");
 
-    std::string line;
-    bool comment = false;
-    while (std::getline(in, line)) {
-      if (comment) {
-        line[0] = ';';
-        comment = false;
-      }
+    std::vector<std::string> buf;
+    bool continued = false;
+    for (std::string line; std::getline(in, line);) {
       trim(line);
-      if (line[line.length() - 1] == '\\') {
-        line[line.length() - 1] = ' ';
-        trim(line);
-        if (line[0] != ';') {
-          data += line;
-        } else {
-          comment = true;
-        }
+      auto c_old = continued;
+      if (line.length() > 0 && line.back() == '\\') {
+        continued = true;
+        line.back() = ' ';
+        rtrim(line);
       }
-      else if (line[0] != ';') {
-        data += line + "\n";
+      if (c_old) {
+        buf.back() += line;
+      } else {
+        buf.push_back(line);
       }
     }
-
+    for (auto line : buf) {
+      auto comment_loc = line.find_first_of(";");
+      if (comment_loc != std::string::npos) {
+        line = line.substr(0, comment_loc);
+      }
+      data += (line + "\n");
+    }
   }
   const char* getPtr() {return data.c_str();};
   int getLength() {return data.length();}
