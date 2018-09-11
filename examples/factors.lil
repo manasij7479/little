@@ -1,0 +1,35 @@
+int sum(array x, int elements) {
+  int result, i
+  result := 0
+  i := 0
+  while ((i < elements)) {
+    result := (result + x[i])
+    i := (i + 1)
+  }
+  return i
+}
+
+int generate_and_print_factors(int n, array store) {
+  int si, i
+  si := 0
+  i := 0
+  while ((i < n)) {
+    if (((n % i) == 0)) {
+      store[si] := i
+      si := (si + 1)
+    }
+    i := (i+1)
+  }
+  return si
+}
+
+int main() {
+  int num, num_factors
+  num := input()
+
+  array factors[num]
+
+  num_factors := generate_and_print_factors(num, factors)
+  print(num_factors, sum(factors, num_factors))
+  return 0
+}

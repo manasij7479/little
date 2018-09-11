@@ -1,0 +1,6 @@
+foo bar(foo x) {
+  return x
+}
+int main() {
+  return foo(-1)
+}
