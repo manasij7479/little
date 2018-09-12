@@ -36,16 +36,27 @@ public:
       if (comment_loc != std::string::npos) {
         line = line.substr(0, comment_loc);
       }
+      if (is_empty(line)) {
+        continue;
+      }
       data += (line + "\n");
     }
   }
-  const char* getPtr() {return data.c_str();};
+  const char* getPtr() {std::cerr << data; return data.c_str();};
   int getLength() {return data.length();}
 private:
   std::string data;
 
   // TODO : Store line-column
-
+  bool is_empty(std::string str) {
+    bool flag = true;
+    for (auto c : str) {
+      if (!isspace(c)) {
+        return false;
+      }
+    }
+    return flag;
+  }
   std::string& ltrim(std::string& str, const std::string& chars = "\t\n\v\f\r ") {
       str.erase(0, str.find_first_not_of(chars));
       return str;

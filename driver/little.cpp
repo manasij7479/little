@@ -16,7 +16,8 @@ int main(int argc, char** argv) {
 
   ParseLittleProgram()(in).dump(std::cout);
 
-  if (in.index != file.getLength() - 1) {
+  if (in.index < file.getLength() - 1) {
+    std::cout << in.index << '\t' << file.getLength() - 1 << std::endl; 
     std::cerr << "Failed to parse all input.\n";
   }
 

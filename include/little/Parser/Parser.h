@@ -28,12 +28,21 @@ SyntaxTree Expr(Stream& in) {
   }) (in);
 }
 
+SyntaxTree Stmt(Stream& in);
+SyntaxTree StmtBlock(Stream& in) {
+  // {\n <stmt \n>* }\n
+  return B(R2(Seq(".", {S("\n"),
+    Star("stmtblock", R1(Seq(".", {Stmt, S("\n")})))    
+  })))(in); 
+};
+
 SyntaxTree Stmt(Stream& in) {
   return
   Choice("stmt", {
-    PSeq("if", {P(Expr), Stmt, Opt("else", PFX("else", Stmt))}),
-    PSeq("while", {P(Expr), Stmt}),
-    PSeq("for", {P(RM2(Seq("forcond", {Id, S(":") , Expr}))), Stmt}),
+    StmtBlock,
+    PSeq("if", {P(Expr), StmtBlock, Opt("else", PFX("else", StmtBlock))}),
+    PSeq("while", {P(Expr), StmtBlock}),
+    PSeq("for", {P(RM2(Seq("forcond", {Id, S(":") , Expr}))), StmtBlock}),
     Seq("scall", {Id, PCSLE("args", Expr)}),
     B(Star("stmts", Stmt)),
     RM2(Seq("assign", {Id, AssignOp, Expr})),
@@ -48,9 +57,9 @@ SyntaxTree Stmt(Stream& in) {
 }
 
 Action ParseLittleProgram() {
-  auto Function = Seq("function", { Type, Id,
-    PCSLE("args", Decl), B(Star("body", Stmt))});
-  auto Program = Plus("program", Function);
+  auto Function =
+    Seq("function", { Type, Id, PCSLE("args", Decl), StmtBlock});
+  auto Program = Plus("program", N(Function));
   return Program;
 }
 

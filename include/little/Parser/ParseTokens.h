@@ -78,6 +78,5 @@ namespace little {
       return Error("Expected String Literal", in.getIndex());
     }
   }
-
 }
 #endif

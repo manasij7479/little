@@ -58,7 +58,7 @@ struct Stream {
   }
 
   void skipWhiteSpace() {
-    while (index < bounds && std::isspace(ptr[index]))
+    while (index < bounds && (ptr[index] == ' ' || ptr[index] == '\t'))
       index++;
   }
 
@@ -148,6 +148,11 @@ struct SyntaxTree {
     for (int i = 1; i < Children.size(); ++i) {
       Children[i - 1] = Children[i];
     }
+    Children.pop_back();
+  }
+  
+  void removeLastChild() {
+    assert(Children.size() >= 1);
     Children.pop_back();
   }
 
@@ -268,6 +273,17 @@ Action Star(std::string name, Action A) {
   };
 }
 
+// SyntaxTree ParseNewLine(Stream& in) {
+//   StreamRAII s(in);
+//   if (in.fixed("\n")) {
+//     s.invalidate();
+//     return SyntaxTree{"newline", {}, {}};
+//   } else {
+//     return Error("Expected newline", in.getIndex());
+//   }
+// }
+
+
 Action Pr1(Action A) {
   return [A] (Stream& in) {
     auto t = A(in);
@@ -306,6 +322,14 @@ Action RM1(Action A) {
     if (t) t.removeFirstChild();
     return t;
   };
+}
+
+Action RML(Action A) {
+ return [A] (Stream& in) {
+    auto t = A(in);
+    if (t) t.removeLastChild();
+    return t;
+  };  
 }
 
 Action RM2(Action A) {
@@ -401,6 +425,11 @@ Action T(Action A) {
 // <A>
 Action A(Action A) {
   return R2(Seq("nest1", {S("<"), A , S(">")}));
+}
+
+// A\n
+Action N(Action A) {
+  return (R1(Seq(".", {A, S("\n")})));
 }
 
 Action PSeq(std::string prefix, std::deque<Action> Actions) {
