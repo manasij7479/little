@@ -42,7 +42,7 @@ public:
       data += (line + "\n");
     }
   }
-  const char* getPtr() {std::cerr << data; return data.c_str();};
+  const char* getPtr() {return data.c_str();};
   int getLength() {return data.length();}
 private:
   std::string data;

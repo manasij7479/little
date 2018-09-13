@@ -14,11 +14,18 @@ int main(int argc, char** argv) {
 
   Stream in(file.getPtr(), 0, file.getLength() - 1);
 
-  ParseLittleProgram()(in).dump(std::cout);
+  auto st = ParseLittleProgram()(in);
 
-  if (in.index < file.getLength() - 1) {
-    std::cout << in.index << '\t' << file.getLength() - 1 << std::endl; 
+  if (st && in.eof()) {
+    if (argc > 2 && std::string(argv[2]) == "--print-ast") {
+      st.dump(std::cout);
+    }
+    return 0;
+  } else if (in.eof()) {
+    std::cout << in.index << '\t' << file.getLength() - 1 << std::endl;
     std::cerr << "Failed to parse all input.\n";
+  } else {
+    st.dump(std::cerr);
   }
-
+  return 1;
 }

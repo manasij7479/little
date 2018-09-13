@@ -32,8 +32,8 @@ SyntaxTree Stmt(Stream& in);
 SyntaxTree StmtBlock(Stream& in) {
   // {\n <stmt \n>* }\n
   return B(R2(Seq(".", {S("\n"),
-    Star("stmtblock", R1(Seq(".", {Stmt, S("\n")})))    
-  })))(in); 
+    Star("stmtblock", R1(Seq(".", {Stmt, S("\n")})))
+  })))(in);
 };
 
 SyntaxTree Stmt(Stream& in) {

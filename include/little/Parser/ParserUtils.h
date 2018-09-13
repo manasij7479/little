@@ -57,6 +57,10 @@ struct Stream {
     else return false;
   }
 
+  bool eof() {
+    return index >= bounds - 1;
+  }
+
   void skipWhiteSpace() {
     while (index < bounds && (ptr[index] == ' ' || ptr[index] == '\t'))
       index++;
@@ -150,7 +154,7 @@ struct SyntaxTree {
     }
     Children.pop_back();
   }
-  
+
   void removeLastChild() {
     assert(Children.size() >= 1);
     Children.pop_back();
@@ -329,7 +333,7 @@ Action RML(Action A) {
     auto t = A(in);
     if (t) t.removeLastChild();
     return t;
-  };  
+  };
 }
 
 Action RM2(Action A) {
