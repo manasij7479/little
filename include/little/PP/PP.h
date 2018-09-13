@@ -20,6 +20,7 @@ public:
     for (std::string line; std::getline(in, line);) {
       trim(line);
       auto c_old = continued;
+      continued = false;
       if (line.length() > 0 && line.back() == '\\') {
         continued = true;
         line.back() = ' ';
@@ -44,6 +45,9 @@ public:
   }
   const char* getPtr() {return data.c_str();};
   int getLength() {return data.length();}
+  void printPreprocessed(std::ostream& out) {
+    out << data;
+  }
 private:
   std::string data;
 
