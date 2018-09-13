@@ -43,6 +43,7 @@ SyntaxTree Stmt(Stream& in) {
     PSeq("if", {P(Expr), StmtBlock, Opt("else", PFX("else", StmtBlock))}),
     PSeq("while", {P(Expr), StmtBlock}),
     PSeq("for", {P(RM2(Seq("forcond", {Id, S(":") , Expr}))), StmtBlock}),
+    PFX("print", PCSL("args", Expr)),
     Seq("scall", {Id, PCSLE("args", Expr)}),
     B(Star("stmts", Stmt)),
     RM2(Seq("assign", {Id, AssignOp, Expr})),
@@ -52,7 +53,7 @@ SyntaxTree Stmt(Stream& in) {
     RM2(Seq("store", {Id, T(Expr), AssignOp, Expr})),
 
     // TODO comments, maybe handle as a preprocessing step?
-    PFX("return", Opt("returnexpr", Expr)),
+    PFX("return", Opt("returnexpr", Expr)), Expr
   }) (in);
 }
 
