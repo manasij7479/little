@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.6)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14")
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O2")
+ADD_DEFINITIONS(
+    -std=c++1z # Or -std=c++0x
+    -O2
+)
 # OSX
 if(APPLE)
     set(CMAKE_MACOSX_RPATH ON)
