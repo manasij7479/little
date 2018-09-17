@@ -45,11 +45,10 @@ SyntaxTree Stmt(Stream& in) {
     PSeq("for", {P(RM2(Seq("forcond", {Id, S(":") , Expr}))), StmtBlock}),
     PFX("print", PCSL("args", Expr)),
     Seq("scall", {Id, PCSLE("args", Expr)}),
-    B(Star("stmts", Stmt)),
+    //B(Star("stmts", Stmt)),
     RM2(Seq("assign", {Id, AssignOp, Expr})),
     R2(Seq(".", {S("array"), CSL("arraydecls", Seq("arraydecl", {Id, T(Expr)}))})),
     Seq("decls", {Type, CSL("ids", Id)}),
-    PFX("print", PCSL("args", Expr)),
     RM2(Seq("store", {Id, T(Expr), AssignOp, Expr})),
 
     // TODO comments, maybe handle as a preprocessing step?

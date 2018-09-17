@@ -30,6 +30,8 @@ int main(int argc, char** argv) {
     if (args.find("--print-ast") != args.end()) {
       st.dump(std::cout);
     }
+    Codegen gen(st);
+    gen.dumpSyms(std::cout);
     return 0;
   } else {
     st.dump(std::cerr);
