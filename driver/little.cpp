@@ -1,6 +1,7 @@
 #include <iostream>
 #include "little/Parser/Parser.h"
 #include "little/PP/PP.h"
+#include "little/Codegen/Codegen.h"
 #include <fstream>
 #include <sstream>
 #include <set>
@@ -23,7 +24,7 @@ int main(int argc, char** argv) {
 
   Stream in(file.getPtr(), 0, file.getLength() - 1);
 
-  auto st = ParseLittleProgram()(in);
+  auto st = parser::ParseLittleProgram()(in);
 
   if (st && in.eof()) {
     if (args.find("--print-ast") != args.end()) {

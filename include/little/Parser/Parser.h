@@ -4,7 +4,7 @@
 #include "ParseTokens.h"
 
 namespace little {
-
+namespace parser {
 auto Id = ParseIdentifier;
 auto Num = ParseNumber;
 auto Str = ParseStringLiteral;
@@ -62,6 +62,7 @@ Action ParseLittleProgram() {
     Seq("function", { Type, Id, PCSLE("args", Decl), StmtBlock});
   auto Program = Plus("program", N(Function));
   return Program;
+}
 }
 
 }
