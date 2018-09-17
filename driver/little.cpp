@@ -8,6 +8,7 @@
 
 using namespace little;
 
+
 int main(int argc, char** argv) {
   assert(argc > 1); // TODO: switch to argparse
   std::string filename = argv[1];
@@ -22,7 +23,7 @@ int main(int argc, char** argv) {
     file.printPreprocessed(std::cout);
   }
 
-  Stream in(file.getPtr(), 0, file.getLength() - 1);
+  mm::Stream in(file.getPtr(), 0, file.getLength() - 1);
 
   auto st = parser::ParseLittleProgram()(in);
 

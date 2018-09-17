@@ -1,6 +1,4 @@
 cmake_minimum_required(VERSION 2.8.8)
-#add_subdirectory(AST)
-
-add_library(Little SHARED empty.cpp)
-
-target_link_libraries(Little)
+add_subdirectory(Codegen)
+add_subdirectory(Parser)
+add_subdirectory(PP)
