@@ -195,7 +195,7 @@ void Codegen::processStmt(SyntaxTree& stmt) {
   } else if (st == "return") {
     // check if return type matches with function
     auto rett = syms.getFunctionReturnType(FunctionBeingProcessed);
-    switch (stmt.Children.size()) {
+    switch (stmt.Children[0].Children.size()) {
       case 0 : assert(rett == Type::t_void); break;
       case 1 : assert(rett == processExpr(stmt.Children[0].Children[0])); break;
       default : assert(false && "Functions can return at most one value");
@@ -241,7 +241,11 @@ Type Codegen::processExpr(SyntaxTree& expr) { // Might return a llvm::Value* ?
   } else if (e == "bool") {
     return Type::t_bool;
   } else if (e == "cond") {
-    assert(false && "PARSER ISSUE"); // FIXME
+    assert(processExpr(expr.Children[0]) == Type::t_bool);
+    auto t1 = processExpr(expr.Children[2]);
+    auto t2 = processExpr(expr.Children[4]);
+    assert(t1 == t2);
+    return(t1);
   } else if (e == "sizeof") {
     assert(expr.Children.size() == 1);
     assert(processExpr(expr.Children[0]) == Type::t_array);
