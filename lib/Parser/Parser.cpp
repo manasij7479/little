@@ -50,7 +50,7 @@ SyntaxTree Stmt(Stream& in) {
     RM2(Seq("assign", {Id, AssignOp, Expr})),
     R2(Seq(".", {S("array"), CSL("arraydecls", Seq("arraydecl", {Id, T(Expr)}))})),
     Seq("decls", {Type, CSL("ids", Id)}),
-    RM2(Seq("store", {Id, T(Expr), AssignOp, Expr})),
+    RM3(Seq("store", {Id, T(Expr), AssignOp, Expr})),
 
     // TODO comments, maybe handle as a preprocessing step?
     PFX("return", Opt("returnexpr", Expr)), Expr

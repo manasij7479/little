@@ -168,6 +168,14 @@ struct SyntaxTree {
     Children.pop_back();
   }
 
+  void removeThirdChild() {
+    assert(Children.size() >= 3);
+    for (int i = 3; i < Children.size(); ++i) {
+      Children[i - 1] = Children[i];
+    }
+    Children.pop_back();
+  }
+
   std::string indent(int indent, std::vector<int> mark) {
     std::string result = "";
     while (indent--) result += "  ";
@@ -340,6 +348,14 @@ Action RM2(Action A) {
  return [A] (Stream& in) {
     auto t = A(in);
     if (t) t.removeSecondChild();
+    return t;
+  };
+}
+
+Action RM3(Action A) {
+ return [A] (Stream& in) {
+    auto t = A(in);
+    if (t) t.removeThirdChild();
     return t;
   };
 }

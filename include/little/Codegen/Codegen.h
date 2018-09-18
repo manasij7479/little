@@ -21,11 +21,22 @@ struct SymbolTable {
   void popScope() {
     table.pop_back();
   }
+  void insert(std::string name, Type t) {
+    Type foo;
+    if (lookup(name, foo)) {
+      assert(false && "shadowing"); // TODO: better error message
+    } else {
+      table.back()[name] = t;
+    }
+  }
   bool lookup(std::string name, Type& type);
   std::vector<std::map<std::string, Type>> table;
   std::map<std::string, std::vector<std::pair<std::string, Type>>> functions;
   // Functions don't need a stack because they are all in global scope
 
+  Type getFunctionReturnType(std::string fun) {
+    return functions[fun][0].second;
+  }
 
   void dump(std::ostream& out);
 
@@ -54,6 +65,8 @@ private:
   void processStmtBlock(SyntaxTree& stb);
   void processStmt(SyntaxTree& stmt);
   Type processExpr(SyntaxTree& expr);
+  Type processCall(SyntaxTree& st);
+  Type checkVar(SyntaxTree& st);
 
   mm::SyntaxTree st;
   SymbolTable syms;
