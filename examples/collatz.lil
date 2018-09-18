@@ -1,5 +1,5 @@
-int collatz_recursive(int x) {
-  if ((x == 1)) {
+int collatz_recursive(int n) {
+  if ((n == 1)) {
     return 0;
   } else {
     if (((n % 2) == 0)) {
@@ -10,14 +10,14 @@ int collatz_recursive(int x) {
   } 
 }
 
-int collatz_iterative(int x) {
+int collatz_iterative(int n) {
   int result
   result := 1
-  while ((!(x == 1))) {
+  while ((!(n == 1))) {
     if (((n % 2) == 0)) {
-      x := (x / 2)
+      n := (n / 2)
     } else {
-      x := ((3 * x) + 1)
+      n := ((3 * n) + 1)
     }
     result := (result + 1)
   }

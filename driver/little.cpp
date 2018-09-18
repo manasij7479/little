@@ -32,8 +32,9 @@ int main(int argc, char** argv) {
       st.dump(std::cout);
     }
     Codegen gen(st);
+    gen.dumpSyms(std::cerr);
     gen("dummy");
-    gen.dumpSyms(std::cout);
+    
     return 0;
   } else {
     st.dump(std::cerr);

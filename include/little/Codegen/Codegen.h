@@ -10,7 +10,7 @@
 namespace little {
 using mm::SyntaxTree;
 
-enum class Type {t_int, t_bool, t_void, t_array, t_fun};
+enum class Type {t_int, t_bool, t_void, t_array, t_fun, t_str};
 Type TypeFromString(std::string in);
 std::string StringFromType(Type t);
 

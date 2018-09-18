@@ -20,8 +20,8 @@ SyntaxTree Expr(Stream& in) {
   Choice("expr", {
     SS("bool", {"true", "false"}), Num,
     P(Seq("cond", {Expr, S("?"), Expr, S(":"), Expr})),
-    Seq("sizeof", {S("sizeof"), P(Id)}),
-    // Seq("input", {S("input()")}),
+    PFX("sizeof", P(Id)),
+    S("input()"),
     Seq("load", {Id, T(Expr)}),
     Seq("call", {Id, PCSLE("args", Expr)}),
     P(Seq("binexpr", {Expr, Binop, Expr})),

@@ -8,7 +8,8 @@ Type TypeFromString(std::string in) {
     {"int", Type::t_int},
     {"bool", Type::t_bool},
     {"void", Type::t_void},
-    {"array", Type::t_array}
+    {"array", Type::t_array},
+    {"str", Type::t_str}
   };
   return map[in];
 }
@@ -19,7 +20,9 @@ std::string StringFromType(Type t) {
     case Type::t_void : return "void";
     case Type::t_array : return "array";
     case Type::t_fun : return "function";
+    case Type::t_str : return "str";
   }
+  return "bad_type";
 }
 
 bool SymbolTable::lookup(std::string name, Type& type) {
@@ -106,6 +109,7 @@ void Codegen::processFunction(SyntaxTree& function) {
   // llvm module getOrInsertFunction TODO?
 }
 void Codegen::processStmtBlock(SyntaxTree& stb) {
+  assert(stb.Node == "stmtblock");
   syms.newScope();
   for (auto&& stmt : stb.Children) {
       assert(stmt.Node == "stmt");
@@ -142,19 +146,23 @@ void Codegen::processStmt(SyntaxTree& stmt) {
     processStmt(stmt.Children[1]); // while body
   } else if (st == "for") {
     assert(stmt.Children.size() == 2);
-
-    assert(false && "unimplemented");
-    // check for cond, rhs must be array, lhs must be integer
-
+    
+    assert(stmt.Children[0].Children.size() == 2);
+    assert(checkVar(stmt.Children[0].Children[0]) == Type::t_int);
+    assert(processExpr(stmt.Children[0].Children[1]) == Type::t_array);
+    
     processStmt(stmt.Children[1]); // for body
+    // check for cond, rhs must be array, lhs must be integer
   } else if (st == "print") {
     // go through args and check if they are strings or ints
-    assert(false && "unimplemented");
+    for (auto arg : stmt.Children[0].Children) {
+      auto t = processExpr(arg);
+      assert(t == Type::t_int || t == Type::t_str);
+    }
 
   } else if (st == "scall") {
     // type checking for call expressions
-    assert(stmt.Children.size() == 1);
-    processCall(stmt.Children[0]); // no need to bother about return type
+    processCall(stmt); // no need to bother about return type
 
   } else if (st == "assign") {
     // check if type matches
@@ -162,8 +170,12 @@ void Codegen::processStmt(SyntaxTree& stmt) {
     assert(checkVar(stmt.Children[0]) == processExpr(stmt.Children[1]));
 
   } else if (st == "arraydecls") {
-    // update symbol table
-    assert(false && "unimplemented");
+    for (auto arraydecl : stmt.Children) {
+      assert(arraydecl.Children.size() == 2);
+      syms.insert(arraydecl.Children[0].Attributes["val"], Type::t_array);
+      assert(processExpr(arraydecl.Children[1]) == Type::t_int);
+    }
+    
   } else if (st == "decls") {
     assert(stmt.Children.size() == 2);
     auto type = TypeFromString(stmt.Children[0].Children[0].Node);
@@ -175,7 +187,7 @@ void Codegen::processStmt(SyntaxTree& stmt) {
     // update symbol table
   } else if (st == "store") {
     // check if array exists and index, rhs is integer
-    assert(stmt.Children.size() == 2);
+    assert(stmt.Children.size() == 3);
     assert(checkVar(stmt.Children[0]) == Type::t_array);
     assert(processExpr(stmt.Children[1]) == Type::t_int);
     assert(processExpr(stmt.Children[2]) == Type::t_int);
@@ -195,7 +207,7 @@ Type Codegen::processCall(SyntaxTree& st) {
   assert(st.Children.size() == 2);
   auto name = st.Children[0].Attributes["val"];
   auto args = st.Children[1];
-  auto params = syms.functions["name"];
+  auto params = syms.functions[name];
   assert(args.Children.size() == params.size() - 1);
   for (int i = 0; i < args.Children.size(); ++i) {
     auto t = processExpr(args.Children[i]);
@@ -206,10 +218,12 @@ Type Codegen::processCall(SyntaxTree& st) {
 
 Type Codegen::checkVar(SyntaxTree& st) {
   Type t;
+  assert(st.Node == "id");
   auto b = syms.lookup(st.Attributes["val"], t);
   if (!b) {
     std::cerr << "Lookup : " <<  st.Attributes["val"] << '\t' << b << "\n";
     syms.dump(std::cerr);
+    st.dump(std::cerr);
   }
   assert(b && "Use of undeclared variable");
   return t;
@@ -235,10 +249,14 @@ Type Codegen::processExpr(SyntaxTree& expr) { // Might return a llvm::Value* ?
   } else if (e == "load") {
     assert(expr.Children.size() == 2);
     assert(checkVar(expr.Children[0]) == Type::t_array);
-    assert(checkVar(expr.Children[1]) == Type::t_int);
+    assert(processExpr(expr.Children[1]) == Type::t_int);
     return Type::t_int;
   } else if (e == "call") {
     return processCall(expr);
+  } else if (e == "input()") {
+    return Type::t_int;
+  } else if (e == "str") {
+    return Type::t_str;
   } else if (e == "binexpr") {
     assert(expr.Children.size() == 3);
     auto op = expr.Children[1].Children[0].Node;
@@ -247,7 +265,7 @@ Type Codegen::processExpr(SyntaxTree& expr) { // Might return a llvm::Value* ?
     if (op == "==" || op == "!=") {
       assert(lhstype == rhstype);
       assert(lhstype == Type::t_int || lhstype == Type::t_bool);
-      return lhstype;
+      return Type::t_bool;
     }
     if (op == "+" || op == "-" || op == "*"
      || op == "^" || op == "/" || op == "%") {
@@ -270,7 +288,7 @@ Type Codegen::processExpr(SyntaxTree& expr) { // Might return a llvm::Value* ?
     }
   } else if (e == "unaryexpr") {
     assert(expr.Children.size() == 2);
-    auto op = expr.Children[0].Node;
+    auto op = expr.Children[0].Children[0].Node;
     auto opndtype = processExpr(expr.Children[1]);
     if (op == "!") {
       assert(opndtype == Type::t_bool);
