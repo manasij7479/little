@@ -1,8 +1,21 @@
 cmake_minimum_required(VERSION 3.6)
+project(little)
+
 ADD_DEFINITIONS(
     -std=c++1z # Or -std=c++0x
     -O2
 )
+
+find_package(LLVM REQUIRED CONFIG)
+
+message(STATUS “Found LLVM ${LLVM_PACKAGE_VERSION}“)
+message(STATUS “Using LLVMConfig.cmake in: ${LLVM_DIR}“)
+
+add_definitions(${LLVM_DEFINITIONS})
+
+llvm_map_components_to_libnames(llvm_libs support core irreader)
+
+
 # OSX
 if(APPLE)
     set(CMAKE_MACOSX_RPATH ON)
@@ -18,7 +31,7 @@ endif()
 
 project(little)
 
-include_directories(include)
+include_directories(include ${LLVM_INCLUDE_DIRS})
 link_directories(lib)
 
 add_subdirectory(lib)

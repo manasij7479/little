@@ -51,7 +51,7 @@ void SymbolTable::dump(std::ostream& out) {
   }
 }
 
-Codegen::Codegen(mm::SyntaxTree st_): st(st_) {
+Codegen::Codegen(mm::SyntaxTree st_): st(st_), Builder(TheContext) {
   assert(st.Node == "program" && "Syntax Tree Root missing");
 
   // Pass 1 : Store name and type of functions
