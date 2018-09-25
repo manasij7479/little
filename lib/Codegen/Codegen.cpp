@@ -13,6 +13,18 @@ Type TypeFromString(std::string in) {
   };
   return map[in];
 }
+
+llvm::Type* LLVMTypeFromString(std::string in, LLVMContext &C) {
+  static std::map<std::string, llvm::Type*> map = {
+    {"int", llvm::Type::getInt64Ty(C)},
+    {"bool", llvm::Type::getInt1Ty(C)},
+    {"void", llvm::Type::getVoidTy(C)},
+    //{"array", Type::t_array},
+    //{"str", Type::t_str}
+  };
+  return map[in];
+}
+
 std::string StringFromType(Type t) {
   switch (t) {
     case Type::t_int : return "int";
@@ -25,33 +37,47 @@ std::string StringFromType(Type t) {
   return "bad_type";
 }
 
-bool SymbolTable::lookup(std::string name, Type& type) {
-  for (auto&& m : table) {
-    auto iter = m.find(name);
-    if (iter != m.end()) {
-      type = iter->second;
-      return true;
+Type GetLittleType (Value *V) {
+  if (V->getType()->isIntegerTy(64)) {
+    return Type::t_int;
+  } else if (V->getType()->isIntegerTy(1)) {
+    return Type::t_bool;
+  } else {
+    assert(false && "unimplemented");
+    return Type::t_void;
+  }
+}
+
+Value* SymbolTable::lookup(std::string name) {
+  for (auto m_it = table.rbegin(); m_it != table.rend(); ++m_it) {
+    auto iter = m_it->find(name);
+    if (iter != m_it->end()) {
+      return iter->second;
     }
   }
-  return false;
+  return nullptr;
 }
 
 void SymbolTable::dump(std::ostream& out) {
-  for (auto f : functions) {
-    out << "function " << f.first << "\n";
-    for (auto t : f.second) {
-      out << "(" << t.first << ", " << StringFromType(t.second) << ") ";
-    }
-    out << "\n";
-  }
+//   for (auto f : functions) {
+//     out << "function " << f.first << "\n";
+//     for (auto t : f.second) {
+//       out << "(" << t.first << ", " << StringFromType(t.second) << ") ";
+//     }
+//     out << "\n";
+//   }
   for (auto t : table) {
     for (auto p : t) {
-      out << "var " << "(" << p.first << ", " << StringFromType(p.second) << ") \n";
+      out << "var " << "(" << p.first << ", "
+          << StringFromType( GetLittleType (p.second)) << ") \n";
     }
   }
 }
 
-Codegen::Codegen(mm::SyntaxTree st_): st(st_), Builder(TheContext) {
+Codegen::Codegen(mm::SyntaxTree st_): st(st_), Builder(TheContext), syms(TheContext, Builder) {
+
+  TheModule = llvm::make_unique<Module>("main", TheContext);
+
   assert(st.Node == "program" && "Syntax Tree Root missing");
 
   // Pass 1 : Store name and type of functions
@@ -66,49 +92,59 @@ Codegen::Codegen(mm::SyntaxTree st_): st(st_), Builder(TheContext) {
     assert(args.Node == "args");
     // no need to process body here
 
-    std::vector<std::pair<std::string, Type>> argtypes;
-    std::pair<std::string, Type> p = {std::string("#ret"), TypeFromString(rettype.Children[0].Node)};
-    argtypes.push_back(p);
+    std::vector<llvm::Type*> argtypes;
+    std::vector<std::string> Args;
+    auto llvmrettype = LLVMTypeFromString(rettype.Children[0].Node, TheContext);
 
-    assert(argtypes[0].second != Type::t_array && "Function return type can not be array");
+    assert(llvmrettype != llvm::Type::getInt64PtrTy(TheContext) && "Function return type can not be array");
 
     for (auto&& arg : args.Children) {
       assert(arg.Node == "decl");
       assert(arg.Children.size() == 2);
-      std::pair<std::string, Type> p = {arg.Children[1].Attributes["val"],
-        TypeFromString(arg.Children[0].Children[0].Node)};
-      assert(p.second != Type::t_void && "Function argument can not have void type");
-      argtypes.push_back(p);
+      std::pair<std::string, std::string> p = {arg.Children[1].Attributes["val"],
+        arg.Children[0].Children[0].Node};
+      assert(p.second != "void" && "Function argument can not have void type");
+      argtypes.push_back(LLVMTypeFromString(p.second, TheContext));
+      Args.push_back(p.first);
     }
 
-    assert(argtypes.size() > 0 && "Function must have a return type"); // must have return type
-    syms.functions[name.Attributes["val"]] = argtypes;
+    auto FT = FunctionType::get(llvmrettype, argtypes, false);
+
+    Function *F =
+      Function::Create(FT, Function::ExternalLinkage, name.Attributes["val"], TheModule.get());
+
+  // Set names for all arguments.
+    unsigned Idx = 0;
+    for (auto &Arg : F->args())
+      Arg.setName(Args[Idx++]);
+
+    syms.functions[name.Attributes["val"]] = F;
   }
 
 }
 
 void Codegen::processFunction(SyntaxTree& function) {
-        // Codegen for a specific function
-  FunctionBeingProcessed = function.Children[1].Attributes["val"];
+  // Codegen for a specific function
+  FunctionBeingProcessed = TheModule->getFunction(function.Children[1].Attributes["val"]);
 
-  auto info = syms.functions[FunctionBeingProcessed];
+  Function* F = FunctionBeingProcessed;
 
   auto body = function.Children[3];
   assert(body.Node == "stmtblock");
 
   syms.newScope();
+  BasicBlock *BB = BasicBlock::Create(TheContext, "entry", FunctionBeingProcessed);
+  Builder.SetInsertPoint(BB);
 
-  for (int i = 1; i < info.size(); ++i) {
-    syms.insert(info[i].first, info[i].second);
+  for (Argument& arg : F->args()) {
+    syms.insert(arg.getName(), GetLittleType(&arg));
   }
 
-  processStmtBlock(body);
+  processStmtBlock(body, "entry");
 
   syms.popScope();
-
-  // llvm module getOrInsertFunction TODO?
 }
-void Codegen::processStmtBlock(SyntaxTree& stb) {
+void Codegen::processStmtBlock(SyntaxTree& stb, std::string name) {
   assert(stb.Node == "stmtblock");
   syms.newScope();
   for (auto&& stmt : stb.Children) {
@@ -128,7 +164,7 @@ void Codegen::processStmt(SyntaxTree& stmt) {
   } else if (st == "if") {
     assert(stmt.Children.size() == 3);
     auto t = processExpr(stmt.Children[0]);
-    assert(t == Type::t_bool && "If condition must be boolean");
+    assert(t->getType()->isIntegerTy(1) && "If condition must be boolean");
 
     processStmt(stmt.Children[1]); // if body
     if (stmt.Children[1].Children.size() == 1) {
@@ -138,26 +174,28 @@ void Codegen::processStmt(SyntaxTree& stmt) {
     assert(stmt.Children.size() == 2);
     auto t = processExpr(stmt.Children[0]);
 
-    if (t != Type::t_bool) {
-      std::cerr << "Bad while cond " << StringFromType(t) << "\n";
+    if (!t->getType()->isIntegerTy(1)) {
+      std::cerr << "Bad while cond " << "\n";
+//       t->dump(); // FIXME Doesn't link
     }
-    assert(t == Type::t_bool && "While condition must be boolean");
+    assert(!t->getType()->isIntegerTy(1) && "While condition must be boolean");
 
     processStmt(stmt.Children[1]); // while body
   } else if (st == "for") {
     assert(stmt.Children.size() == 2);
-    
+
     assert(stmt.Children[0].Children.size() == 2);
-    assert(checkVar(stmt.Children[0].Children[0]) == Type::t_int);
-    assert(processExpr(stmt.Children[0].Children[1]) == Type::t_array);
-    
+    assert(false && "unimplemented");
+//     assert(checkVar(stmt.Children[0].Children[0]) == Type::t_int);
+//     assert(processExpr(stmt.Children[0].Children[1]) == Type::t_array);
+
     processStmt(stmt.Children[1]); // for body
     // check for cond, rhs must be array, lhs must be integer
   } else if (st == "print") {
     // go through args and check if they are strings or ints
     for (auto arg : stmt.Children[0].Children) {
       auto t = processExpr(arg);
-      assert(t == Type::t_int || t == Type::t_str);
+      assert(t->getType()->isIntegerTy(64) || t->getType()->isPointerTy());
     }
 
   } else if (st == "scall") {
@@ -167,15 +205,19 @@ void Codegen::processStmt(SyntaxTree& stmt) {
   } else if (st == "assign") {
     // check if type matches
     assert(stmt.Children.size() == 2);
-    assert(checkVar(stmt.Children[0]) == processExpr(stmt.Children[1]));
+    auto v = checkVar(stmt.Children[0]);
+    auto e = processExpr(stmt.Children[1]);
+    assert(v->getType() == e->getType());
+
+    Builder.CreateStore(e, v);
 
   } else if (st == "arraydecls") {
     for (auto arraydecl : stmt.Children) {
       assert(arraydecl.Children.size() == 2);
       syms.insert(arraydecl.Children[0].Attributes["val"], Type::t_array);
-      assert(processExpr(arraydecl.Children[1]) == Type::t_int);
+      assert(processExpr(arraydecl.Children[1])->getType()->isIntegerTy(64));
     }
-    
+
   } else if (st == "decls") {
     assert(stmt.Children.size() == 2);
     auto type = TypeFromString(stmt.Children[0].Children[0].Node);
@@ -188,104 +230,173 @@ void Codegen::processStmt(SyntaxTree& stmt) {
   } else if (st == "store") {
     // check if array exists and index, rhs is integer
     assert(stmt.Children.size() == 3);
-    assert(checkVar(stmt.Children[0]) == Type::t_array);
-    assert(processExpr(stmt.Children[1]) == Type::t_int);
-    assert(processExpr(stmt.Children[2]) == Type::t_int);
+    assert(false && "unimplemented");
+//     assert(checkVar(stmt.Children[0]) == Type::t_array);
+//     assert(processExpr(stmt.Children[1]) == Type::t_int);
+//     assert(processExpr(stmt.Children[2]) == Type::t_int);
 
   } else if (st == "return") {
     // check if return type matches with function
-    auto rett = syms.getFunctionReturnType(FunctionBeingProcessed);
+    auto rett = FunctionBeingProcessed->getReturnType();
     switch (stmt.Children[0].Children.size()) {
-      case 0 : assert(rett == Type::t_void); break;
-      case 1 : assert(rett == processExpr(stmt.Children[0].Children[0])); break;
+      case 0 : assert(rett == llvm::Type::getVoidTy(TheContext)); Builder.CreateRetVoid(); break;
+      case 1 : {
+        auto t = processExpr(stmt.Children[0].Children[0]);
+        assert(rett == t->getType());
+        Builder.CreateRet(t);
+        break;
+      }
       default : assert(false && "Functions can return at most one value");
     }
   }
 }
 
-Type Codegen::processCall(SyntaxTree& st) {
+Value* Codegen::processCall(SyntaxTree& st) {
   assert(st.Children.size() == 2);
   auto name = st.Children[0].Attributes["val"];
   auto args = st.Children[1];
-  auto params = syms.functions[name];
-  assert(args.Children.size() == params.size() - 1);
-  for (int i = 0; i < args.Children.size(); ++i) {
-    auto t = processExpr(args.Children[i]);
-    assert(t == params[i + 1].second);
+  Function *F = syms.functions[name];
+  assert(args.Children.size() == F->arg_size());
+  int i = 0;
+  std::vector<Value*> list;
+  for (Argument& param : F->args()) {
+    auto t = processExpr(args.Children[i++]);
+    assert(t->getType() == param.getType());
+    list.push_back(t);
   }
-  return syms.getFunctionReturnType(name);
+  return Builder.CreateCall(F, list);
 }
 
-Type Codegen::checkVar(SyntaxTree& st) {
-  Type t;
+Value* Codegen::checkVar(SyntaxTree& st) {
   assert(st.Node == "id");
-  auto b = syms.lookup(st.Attributes["val"], t);
-  if (!b) {
-    std::cerr << "Lookup : " <<  st.Attributes["val"] << '\t' << b << "\n";
+  auto v = syms.lookup(st.Attributes["val"]);
+  if (!v) {
+    std::cerr << "Lookup : " <<  st.Attributes["val"] << "\n";
     syms.dump(std::cerr);
     st.dump(std::cerr);
   }
-  assert(b && "Use of undeclared variable");
-  return t;
+  assert(v && "Use of undeclared variable");
+  if (llvm::isa<Argument>(v)) {
+    return v;
+  } else {
+    return Builder.CreateLoad(v);
+  }
 }
 
-Type Codegen::processExpr(SyntaxTree& expr) { // Might return a llvm::Value* ?
+Value* Codegen::processExpr(SyntaxTree& expr) { // Might return a llvm::Value* ?
   auto e = expr.Node;
   if (e == "expr") {
     return processExpr(expr.Children[0]);
   }
   if (e == "num") {
-    return Type::t_int;
+    return llvm::ConstantInt::get(TheContext, llvm::APInt(64, std::stoi(expr.Attributes["val"]), false));
   } if (e == "id") {
     return checkVar(expr);
   } else if (e == "bool") {
-    return Type::t_bool;
+    auto bv = expr.getFirstChild().Node;
+    assert (bv == "true" || bv == "false");
+    if (bv == "true") {
+      return llvm::ConstantInt::get(TheContext, llvm::APInt(1, 1, false));
+    }
+    if (bv == "false") {
+      return llvm::ConstantInt::get(TheContext, llvm::APInt(1, 0, false));
+    }
   } else if (e == "cond") {
-    assert(processExpr(expr.Children[0]) == Type::t_bool);
+    auto c = processExpr(expr.Children[0]);
+    assert(c->getType()->isIntegerTy(1));
     auto t1 = processExpr(expr.Children[2]);
     auto t2 = processExpr(expr.Children[4]);
-    assert(t1 == t2);
-    return(t1);
+    assert(t1->getType() == t2->getType());
+    return Builder.CreateSelect(c, t1, t2);
   } else if (e == "sizeof") {
-    assert(expr.Children.size() == 1);
-    assert(processExpr(expr.Children[0]) == Type::t_array);
-    return Type::t_int;
+//     assert(expr.Children.size() == 1);
+//     assert(processExpr(expr.Children[0]) == Type::t_array);
+//     return Type::t_int;
+    assert(false && "unimplemented, store array size in symbol table");
+    return nullptr;
   } else if (e == "load") {
-    assert(expr.Children.size() == 2);
-    assert(checkVar(expr.Children[0]) == Type::t_array);
-    assert(processExpr(expr.Children[1]) == Type::t_int);
-    return Type::t_int;
+//     assert(expr.Children.size() == 2);
+//     assert(checkVar(expr.Children[0]) == Type::t_array);
+//     assert(processExpr(expr.Children[1]) == Type::t_int);
+//     return Type::t_int;
+    assert(false && "unimplemented");
+    return nullptr;
   } else if (e == "call") {
     return processCall(expr);
-  } else if (e == "input()") {
-    return Type::t_int;
+  }  else if (e == "input()") {
+//     return Type::t_int;
+    assert(false && "unimplemented");
+    return nullptr;
   } else if (e == "str") {
-    return Type::t_str;
+//     return Type::t_str;
+    assert(false && "unimplemented");
+    return nullptr;
   } else if (e == "binexpr") {
     assert(expr.Children.size() == 3);
     auto op = expr.Children[1].Children[0].Node;
-    auto lhstype = processExpr(expr.Children[0]);
-    auto rhstype = processExpr(expr.Children[2]);
+    auto lhs = processExpr(expr.Children[0]);
+    auto rhs = processExpr(expr.Children[2]);
+    auto lhstype = GetLittleType(lhs);
+    auto rhstype = GetLittleType(rhs);
     if (op == "==" || op == "!=") {
       assert(lhstype == rhstype);
       assert(lhstype == Type::t_int || lhstype == Type::t_bool);
-      return Type::t_bool;
+      if (op == "==") {
+        return Builder.CreateICmpEQ(lhs, rhs);
+      }
+      if (op == "!=") {
+        return Builder.CreateICmpNE(lhs, rhs);
+      }
     }
     if (op == "+" || op == "-" || op == "*"
      || op == "^" || op == "/" || op == "%") {
       assert(lhstype == rhstype);
       assert(lhstype == Type::t_int);
-      return Type::t_int;
+      if (op == "+") {
+        return Builder.CreateAdd(lhs, rhs);
+      }
+      if (op == "-") {
+        return Builder.CreateSub(lhs, rhs);
+      }
+      if (op == "*") {
+        return Builder.CreateMul(lhs, rhs);
+      }
+      if (op == "/") {
+        return Builder.CreateSDiv(lhs, rhs);
+      }
+      if (op == "^") {
+        assert(false && "unimplemented");
+        return nullptr;
+      }
+      if (op == "%") {
+        return Builder.CreateSRem(lhs, rhs);
+      }
     }
     if (op == ">=" || op == ">" || op == "<=" || op == "<") {
       assert(lhstype == rhstype);
       assert(lhstype == Type::t_int);
-      return Type::t_bool;
+      if (op == ">=") {
+        return Builder.CreateICmpSGE(lhs, rhs);
+      }
+      if (op == ">") {
+        return Builder.CreateICmpSGT(lhs, rhs);
+      }
+      if (op == "<=") {
+        return Builder.CreateICmpSLE(lhs, rhs);
+      }
+      if (op == "<") {
+        return Builder.CreateICmpSLT(lhs, rhs);
+      }
     }
     if (op == "&" || op == "|") {
       assert(lhstype == rhstype);
       assert(lhstype == Type::t_bool);
-      return Type::t_bool;
+      if (op == "&") {
+        return Builder.CreateAnd(lhs, rhs);
+      }
+      if (op == "|") {
+        return Builder.CreateOr(lhs, rhs);
+      }
     } else {
       std::cerr << "Bad Binary operator : " << op << "\n";
       assert(false && "Unexpected binary operator");
@@ -293,13 +404,15 @@ Type Codegen::processExpr(SyntaxTree& expr) { // Might return a llvm::Value* ?
   } else if (e == "unaryexpr") {
     assert(expr.Children.size() == 2);
     auto op = expr.Children[0].Children[0].Node;
-    auto opndtype = processExpr(expr.Children[1]);
+    auto opnd = processExpr(expr.Children[1]);
+    auto opndtype = GetLittleType(opnd);
     if (op == "!") {
       assert(opndtype == Type::t_bool);
-      return Type::t_bool;
+      return Builder.CreateNot(opnd);
     } else if (op == "-") {
       assert(opndtype == Type::t_int);
-      return Type::t_int;
+      return Builder.CreateSub(
+        llvm::ConstantInt::get(TheContext, llvm::APInt(64, 0, false)), opnd);
     } else {
       assert(false && "Unexpected unary operator");
     }
@@ -307,6 +420,7 @@ Type Codegen::processExpr(SyntaxTree& expr) { // Might return a llvm::Value* ?
 
   expr.dump(std::cerr);
   assert(false && "unreachable");
+  return nullptr;
 }
 
 }

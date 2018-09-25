@@ -3,7 +3,7 @@ project(little)
 
 ADD_DEFINITIONS(
     -std=c++1z # Or -std=c++0x
-    -O2
+    -g
 )
 
 find_package(LLVM REQUIRED CONFIG)
