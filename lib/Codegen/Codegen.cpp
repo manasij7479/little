@@ -172,17 +172,19 @@ BasicBlock* Codegen::processStmt(SyntaxTree& stmt, BasicBlock* BB) {
     assert(t->getType()->isIntegerTy(1) && "If condition must be boolean");
 
     auto ifbb = processStmt(stmt.Children[1], BB); // if body
+    ifbb->setName("if.true");
     Builder.SetInsertPoint(BB);
     BasicBlock *elsebb = nullptr;
     if (stmt.Children[1].Children.size() == 1) {
       elsebb = processStmt(stmt.Children[2].Children[0], BB); // optional else body
+      elsebb->setName("if.false");
     }
     if (!elsebb) {
-      elsebb = BasicBlock::Create(TheContext, "emptyelse", FunctionBeingProcessed);
+      elsebb = BasicBlock::Create(TheContext, "if.false.empty", FunctionBeingProcessed);
     }
     Builder.SetInsertPoint(BB);
     Builder.CreateCondBr(t, ifbb, elsebb);
-    BasicBlock* endif = BasicBlock::Create(TheContext, "endif", FunctionBeingProcessed);
+    BasicBlock* endif = BasicBlock::Create(TheContext, "if.end", FunctionBeingProcessed);
 
     Builder.SetInsertPoint(ifbb);
     Builder.CreateBr(endif);
@@ -192,15 +194,29 @@ BasicBlock* Codegen::processStmt(SyntaxTree& stmt, BasicBlock* BB) {
 
   } else if (st == "while") {
     assert(stmt.Children.size() == 2);
+    BasicBlock* header = BasicBlock::Create(TheContext, "while.header", FunctionBeingProcessed);
+    Builder.SetInsertPoint(header);
     auto t = processExpr(stmt.Children[0]);
 
     if (!t->getType()->isIntegerTy(1)) {
       std::cerr << "Bad while cond " << "\n";
 //       t->dump(); // FIXME Doesn't link
     }
-    assert(!t->getType()->isIntegerTy(1) && "While condition must be boolean");
+    assert(t->getType()->isIntegerTy(1) && "While condition must be boolean");
 
-    processStmt(stmt.Children[1], BB); // while body
+    auto loopbb = processStmt(stmt.Children[1], BB); // while body
+    loopbb->setName("while.body");
+
+    BasicBlock* endwhile = BasicBlock::Create(TheContext, "while.end", FunctionBeingProcessed);
+
+    Builder.SetInsertPoint(BB);
+    Builder.CreateBr(header);
+    Builder.SetInsertPoint(header);
+    Builder.CreateCondBr(t, loopbb, endwhile);
+    Builder.SetInsertPoint(loopbb);
+    Builder.CreateBr(header);
+    return endwhile;
+
   } else if (st == "for") {
     assert(stmt.Children.size() == 2);
 
