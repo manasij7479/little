@@ -150,30 +150,46 @@ BasicBlock* Codegen::processStmtBlock(SyntaxTree& stb, std::string name) {
   syms.newScope();
   BasicBlock *BB = BasicBlock::Create(TheContext, name, FunctionBeingProcessed);
   Builder.SetInsertPoint(BB);
+  auto FirstBB = BB;
   for (auto&& stmt : stb.Children) {
-      assert(stmt.Node == "stmt");
-      processStmt(stmt);
+    assert(stmt.Node == "stmt");
+    BB = processStmt(stmt, BB);
+    Builder.SetInsertPoint(BB);
   }
   syms.popScope();
-  return BB;
+  return FirstBB;
 }
-void Codegen::processStmt(SyntaxTree& stmt) {
+BasicBlock* Codegen::processStmt(SyntaxTree& stmt, BasicBlock* BB) {
   auto st = stmt.Node;
-  if (st == "stmt") {
-    processStmt(stmt.Children[0]);
-    return;
+  if (st == "stmt" || st == "else") {
+    return processStmt(stmt.Children[0], BB);
   }
   if (st == "stmtblock") {
-    processStmtBlock(stmt);
+    return processStmtBlock(stmt);
   } else if (st == "if") {
     assert(stmt.Children.size() == 3);
     auto t = processExpr(stmt.Children[0]);
     assert(t->getType()->isIntegerTy(1) && "If condition must be boolean");
 
-    processStmt(stmt.Children[1]); // if body
+    auto ifbb = processStmt(stmt.Children[1], BB); // if body
+    Builder.SetInsertPoint(BB);
+    BasicBlock *elsebb = nullptr;
     if (stmt.Children[1].Children.size() == 1) {
-      processStmt(stmt.Children[1].Children[0]); // optional else body
+      elsebb = processStmt(stmt.Children[2].Children[0], BB); // optional else body
     }
+    if (!elsebb) {
+      elsebb = BasicBlock::Create(TheContext, "emptyelse", FunctionBeingProcessed);
+    }
+    Builder.SetInsertPoint(BB);
+    Builder.CreateCondBr(t, ifbb, elsebb);
+    BasicBlock* endif = BasicBlock::Create(TheContext, "endif", FunctionBeingProcessed);
+
+    Builder.SetInsertPoint(ifbb);
+    Builder.CreateBr(endif);
+    Builder.SetInsertPoint(elsebb);
+    Builder.CreateBr(endif);
+    return endif;
+
   } else if (st == "while") {
     assert(stmt.Children.size() == 2);
     auto t = processExpr(stmt.Children[0]);
@@ -184,7 +200,7 @@ void Codegen::processStmt(SyntaxTree& stmt) {
     }
     assert(!t->getType()->isIntegerTy(1) && "While condition must be boolean");
 
-    processStmt(stmt.Children[1]); // while body
+    processStmt(stmt.Children[1], BB); // while body
   } else if (st == "for") {
     assert(stmt.Children.size() == 2);
 
@@ -193,7 +209,7 @@ void Codegen::processStmt(SyntaxTree& stmt) {
 //     assert(checkVar(stmt.Children[0].Children[0]) == Type::t_int);
 //     assert(processExpr(stmt.Children[0].Children[1]) == Type::t_array);
 
-    processStmt(stmt.Children[1]); // for body
+    //processStmt(stmt.Children[1]); // for body
     // check for cond, rhs must be array, lhs must be integer
   } else if (st == "print") {
     // go through args and check if they are strings or ints
@@ -205,22 +221,25 @@ void Codegen::processStmt(SyntaxTree& stmt) {
   } else if (st == "scall") {
     // type checking for call expressions
     processCall(stmt); // no need to bother about return type
+    return BB;
 
   } else if (st == "assign") {
     // check if type matches
     assert(stmt.Children.size() == 2);
-    auto v = checkVar(stmt.Children[0]);
+    auto v = checkVarNoDeref(stmt.Children[0]);
     auto e = processExpr(stmt.Children[1]);
-    assert(v->getType() == e->getType());
+    assert(v->getType()->getPointerElementType() == e->getType());
 
     Builder.CreateStore(e, v);
+    return BB;
 
   } else if (st == "arraydecls") {
-    for (auto arraydecl : stmt.Children) {
-      assert(arraydecl.Children.size() == 2);
-      syms.insert(arraydecl.Children[0].Attributes["val"], Type::t_array);
-      assert(processExpr(arraydecl.Children[1])->getType()->isIntegerTy(64));
-    }
+    assert(false && "unimplemented");
+//     for (auto arraydecl : stmt.Children) {
+//       assert(arraydecl.Children.size() == 2);
+//       syms.insert(arraydecl.Children[0].Attributes["val"], Type::t_array);
+//       assert(processExpr(arraydecl.Children[1])->getType()->isIntegerTy(64));
+//     }
 
   } else if (st == "decls") {
     assert(stmt.Children.size() == 2);
@@ -230,6 +249,7 @@ void Codegen::processStmt(SyntaxTree& stmt) {
       auto name = id.Attributes["val"];
       syms.insert(name, type);
     }
+    return BB;
     // update symbol table
   } else if (st == "store") {
     // check if array exists and index, rhs is integer
@@ -243,16 +263,17 @@ void Codegen::processStmt(SyntaxTree& stmt) {
     // check if return type matches with function
     auto rett = FunctionBeingProcessed->getReturnType();
     switch (stmt.Children[0].Children.size()) {
-      case 0 : assert(rett == llvm::Type::getVoidTy(TheContext)); Builder.CreateRetVoid(); break;
+      case 0 : assert(rett == llvm::Type::getVoidTy(TheContext)); Builder.CreateRetVoid(); return BB;
       case 1 : {
         auto t = processExpr(stmt.Children[0].Children[0]);
         assert(rett == t->getType());
         Builder.CreateRet(t);
-        break;
+        return BB;
       }
       default : assert(false && "Functions can return at most one value");
     }
   }
+  assert(false && "Unexpected stmt type");
 }
 
 Value* Codegen::processCall(SyntaxTree& st) {
@@ -285,6 +306,18 @@ Value* Codegen::checkVar(SyntaxTree& st) {
   } else {
     return Builder.CreateLoad(v);
   }
+}
+
+Value* Codegen::checkVarNoDeref(SyntaxTree& st) {
+  assert(st.Node == "id");
+  auto v = syms.lookup(st.Attributes["val"]);
+  if (!v) {
+    std::cerr << "Lookup : " <<  st.Attributes["val"] << "\n";
+    syms.dump(std::cerr);
+    st.dump(std::cerr);
+  }
+  assert(v && "Use of undeclared variable");
+  return v;
 }
 
 Value* Codegen::processExpr(SyntaxTree& expr) { // Might return a llvm::Value* ?

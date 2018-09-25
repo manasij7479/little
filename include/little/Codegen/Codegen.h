@@ -103,10 +103,11 @@ private:
 
   void processFunction(SyntaxTree& function);
   BasicBlock* processStmtBlock(SyntaxTree& stb, std::string name = "");
-  void processStmt(SyntaxTree& stmt);
+  BasicBlock* processStmt(SyntaxTree& stmt, BasicBlock* BB);
   Value* processExpr(SyntaxTree& expr);
   Value* processCall(SyntaxTree& st);
   Value* checkVar(SyntaxTree& st);
+  Value* checkVarNoDeref(SyntaxTree& st);
 
   mm::SyntaxTree st;
   SymbolTable syms;
