@@ -138,20 +138,24 @@ void Codegen::processFunction(SyntaxTree& function) {
 
   for (Argument& arg : F->args()) {
     syms.insert(arg.getName(), GetLittleType(&arg));
+    Builder.CreateStore(&arg, syms.lookup(arg.getName()));
   }
-
-  processStmtBlock(body, "entry");
-
+  auto newBB = processStmtBlock(body, "body");
+  Builder.SetInsertPoint(BB);
+  Builder.CreateBr(newBB);
   syms.popScope();
 }
-void Codegen::processStmtBlock(SyntaxTree& stb, std::string name) {
+BasicBlock* Codegen::processStmtBlock(SyntaxTree& stb, std::string name) {
   assert(stb.Node == "stmtblock");
   syms.newScope();
+  BasicBlock *BB = BasicBlock::Create(TheContext, name, FunctionBeingProcessed);
+  Builder.SetInsertPoint(BB);
   for (auto&& stmt : stb.Children) {
       assert(stmt.Node == "stmt");
       processStmt(stmt);
   }
   syms.popScope();
+  return BB;
 }
 void Codegen::processStmt(SyntaxTree& stmt) {
   auto st = stmt.Node;

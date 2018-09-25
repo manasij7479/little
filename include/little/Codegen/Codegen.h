@@ -90,7 +90,7 @@ public:
 
     for (auto&& function : st.Children) {
       processFunction(function);
-      verifyFunction(*FunctionBeingProcessed);
+      verifyFunction(*FunctionBeingProcessed, &llvm::errs());
     }
     TheModule->print(errs(), nullptr);
     return true;
@@ -102,7 +102,7 @@ private:
   Function *FunctionBeingProcessed;
 
   void processFunction(SyntaxTree& function);
-  void processStmtBlock(SyntaxTree& stb, std::string name = "");
+  BasicBlock* processStmtBlock(SyntaxTree& stb, std::string name = "");
   void processStmt(SyntaxTree& stmt);
   Value* processExpr(SyntaxTree& expr);
   Value* processCall(SyntaxTree& st);
