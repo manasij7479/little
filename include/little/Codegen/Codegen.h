@@ -27,6 +27,13 @@ enum class Type {t_int, t_bool, t_void, t_array, t_fun, t_str};
 Type TypeFromString(std::string in);
 std::string StringFromType(Type t);
 
+llvm::Type *getArrayType(LLVMContext &Ctx) {
+  static std::vector<llvm::Type*> types =
+  {llvm::Type::getInt64PtrTy(Ctx), llvm::Type::getInt64Ty(Ctx)};
+  return llvm::StructType::create(Ctx, types);
+}
+
+
 struct SymbolTable {
   SymbolTable(LLVMContext &TC, IRBuilder<> &B) : TheContext(TC), Builder(B) {};
   void newScope() {
@@ -52,6 +59,36 @@ struct SymbolTable {
          name);
       }
       assert (V && "unimplemented type");
+      table.back()[name] = V;
+    }
+  }
+  void insertArray(std::string name, Value *Size) {
+    if (lookup(name)) {
+      assert(false && "shadowing"); // TODO: better error message
+    } else {
+      Value *V = Builder.CreateAlloca(
+         getArrayType(TheContext),
+         llvm::ConstantInt::get(TheContext, llvm::APInt(/*nbits*/32, 1, /*bool*/false)),
+         name);
+
+      Value* Mem = Builder.CreateAlloca(llvm::Type::getInt64Ty(TheContext), Size);
+
+      std::vector<Value*> ArrayMemIdx =
+      {
+        llvm::ConstantInt::get(TheContext, llvm::APInt(/*nbits*/32, 0, /*bool*/false)),
+        llvm::ConstantInt::get(TheContext, llvm::APInt(/*nbits*/32, 0, /*bool*/false))
+      };
+      std::vector<Value*> ArraySizeIdx =
+      {llvm::ConstantInt::get(TheContext, llvm::APInt(/*nbits*/32, 0, /*bool*/false)),
+        llvm::ConstantInt::get(TheContext, llvm::APInt(/*nbits*/32, 1, /*bool*/false))
+      };
+
+      Value *MemAddr = Builder.CreateGEP(V, ArrayMemIdx);
+      Value *SizeAddr = Builder.CreateGEP(V, ArraySizeIdx);
+
+      Builder.CreateStore(Mem, MemAddr);
+      Builder.CreateStore(Size, SizeAddr);
+
       table.back()[name] = V;
     }
   }
@@ -90,8 +127,9 @@ public:
 
     for (auto&& function : st.Children) {
       processFunction(function);
-      verifyFunction(*FunctionBeingProcessed, &llvm::errs());
+      assert(!verifyFunction(*FunctionBeingProcessed, &llvm::errs()));
     }
+    assert(!verifyModule(*TheModule, &llvm::errs()));
     TheModule->print(errs(), nullptr);
     return true;
   }
@@ -108,6 +146,25 @@ private:
   Value* processCall(SyntaxTree& st);
   Value* checkVar(SyntaxTree& st);
   Value* checkVarNoDeref(SyntaxTree& st);
+
+  void DeclareRuntimeFunctions() {
+    std::vector<llvm::Type*> args = {};
+    auto FT = FunctionType::get(llvm::Type::getInt64Ty(TheContext), args, false);
+    Function::Create(FT, Function::ExternalLinkage, "input", TheModule.get());
+
+    args = {llvm::Type::getInt64Ty(TheContext)};
+    FT = FunctionType::get(llvm::Type::getVoidTy(TheContext), args, false);
+    Function::Create(FT, Function::ExternalLinkage, "printint", TheModule.get());
+
+    args = {llvm::Type::getInt8PtrTy(TheContext)};
+    FT = FunctionType::get(llvm::Type::getVoidTy(TheContext), args, false);
+    Function::Create(FT, Function::ExternalLinkage, "printstring", TheModule.get());
+
+    args = {llvm::Type::getInt64Ty(TheContext)};
+    FT = FunctionType::get(llvm::Type::getInt64PtrTy(TheContext), args, false);
+    Function::Create(FT, Function::ExternalLinkage, "heapalloc", TheModule.get());
+
+  }
 
   mm::SyntaxTree st;
   SymbolTable syms;

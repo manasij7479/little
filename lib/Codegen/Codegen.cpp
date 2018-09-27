@@ -78,6 +78,8 @@ Codegen::Codegen(mm::SyntaxTree st_): st(st_), Builder(TheContext), syms(TheCont
 
   TheModule = llvm::make_unique<Module>("main", TheContext);
 
+  DeclareRuntimeFunctions();
+
   assert(st.Node == "program" && "Syntax Tree Root missing");
 
   // Pass 1 : Store name and type of functions
@@ -250,12 +252,14 @@ BasicBlock* Codegen::processStmt(SyntaxTree& stmt, BasicBlock* BB) {
     return BB;
 
   } else if (st == "arraydecls") {
-    assert(false && "unimplemented");
-//     for (auto arraydecl : stmt.Children) {
-//       assert(arraydecl.Children.size() == 2);
-//       syms.insert(arraydecl.Children[0].Attributes["val"], Type::t_array);
-//       assert(processExpr(arraydecl.Children[1])->getType()->isIntegerTy(64));
-//     }
+    for (auto arraydecl : stmt.Children) {
+      assert(arraydecl.Children.size() == 2);
+      auto name = arraydecl.Children[0].Attributes["val"];
+      auto size = processExpr(arraydecl.Children[1]);
+      assert(size->getType()->isIntegerTy(64));
+      syms.insertArray(name, size);
+    }
+    return BB;
 
   } else if (st == "decls") {
     assert(stmt.Children.size() == 2);
@@ -270,10 +274,29 @@ BasicBlock* Codegen::processStmt(SyntaxTree& stmt, BasicBlock* BB) {
   } else if (st == "store") {
     // check if array exists and index, rhs is integer
     assert(stmt.Children.size() == 3);
-    assert(false && "unimplemented");
 //     assert(checkVar(stmt.Children[0]) == Type::t_array);
 //     assert(processExpr(stmt.Children[1]) == Type::t_int);
 //     assert(processExpr(stmt.Children[2]) == Type::t_int);
+    auto v = checkVarNoDeref(stmt.Children[0]);
+    auto i = processExpr(stmt.Children[1]);
+    auto e = processExpr(stmt.Children[2]);
+
+//     v->getType()->print(llvm::errs());
+//     assert(v->getType() == getArrayType(TheContext));
+    assert(i->getType() == llvm::Type::getInt64Ty(TheContext));
+    assert(e->getType() == llvm::Type::getInt64Ty(TheContext));
+
+    std::vector<Value*> ArrayMemIdx =
+    {
+      llvm::ConstantInt::get(TheContext, llvm::APInt(/*nbits*/32, 0, /*bool*/false)),
+      llvm::ConstantInt::get(TheContext, llvm::APInt(/*nbits*/32, 0, /*bool*/false))
+    };
+    auto addr = Builder.CreateGEP(v, ArrayMemIdx);
+    auto memptr = Builder.CreateLoad(addr);
+    auto targetptr = Builder.CreateGEP(memptr, i);
+    Builder.CreateStore(e, targetptr);
+
+    return BB;
 
   } else if (st == "return") {
     // check if return type matches with function
@@ -289,6 +312,7 @@ BasicBlock* Codegen::processStmt(SyntaxTree& stmt, BasicBlock* BB) {
       default : assert(false && "Functions can return at most one value");
     }
   }
+  std::cerr << "This ->" << st <<"\n";
   assert(false && "Unexpected stmt type");
 }
 
@@ -362,18 +386,35 @@ Value* Codegen::processExpr(SyntaxTree& expr) { // Might return a llvm::Value* ?
     assert(t1->getType() == t2->getType());
     return Builder.CreateSelect(c, t1, t2);
   } else if (e == "sizeof") {
-//     assert(expr.Children.size() == 1);
-//     assert(processExpr(expr.Children[0]) == Type::t_array);
-//     return Type::t_int;
-    assert(false && "unimplemented, store array size in symbol table");
-    return nullptr;
+    assert(expr.Children.size() == 1);
+
+    auto v = checkVarNoDeref(expr.Children[0]);
+
+    std::vector<Value*> ArraySizeIdx =
+    {
+      llvm::ConstantInt::get(TheContext, llvm::APInt(/*nbits*/32, 0, /*bool*/false)),
+      llvm::ConstantInt::get(TheContext, llvm::APInt(/*nbits*/32, 1, /*bool*/false))
+    };
+    auto addr = Builder.CreateGEP(v, ArraySizeIdx);;
+    return Builder.CreateLoad(addr);
+
   } else if (e == "load") {
-//     assert(expr.Children.size() == 2);
-//     assert(checkVar(expr.Children[0]) == Type::t_array);
-//     assert(processExpr(expr.Children[1]) == Type::t_int);
-//     return Type::t_int;
-    assert(false && "unimplemented");
-    return nullptr;
+    assert(expr.Children.size() == 2);
+
+    auto v = checkVarNoDeref(expr.Children[0]);
+    auto i = processExpr(expr.Children[1]);
+
+    assert(i->getType() == llvm::Type::getInt64Ty(TheContext));
+
+    std::vector<Value*> ArrayMemIdx =
+    {
+      llvm::ConstantInt::get(TheContext, llvm::APInt(/*nbits*/32, 0, /*bool*/false)),
+      llvm::ConstantInt::get(TheContext, llvm::APInt(/*nbits*/32, 0, /*bool*/false))
+    };
+    auto addr = Builder.CreateGEP(v, ArrayMemIdx);
+    auto memptr = Builder.CreateLoad(addr);
+    auto targetptr = Builder.CreateGEP(memptr, i);
+    return Builder.CreateLoad(targetptr);
   } else if (e == "call") {
     return processCall(expr);
   }  else if (e == "input()") {
