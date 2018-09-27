@@ -30,7 +30,8 @@ std::string StringFromType(Type t);
 llvm::Type *getArrayType(LLVMContext &Ctx) {
   static std::vector<llvm::Type*> types =
   {llvm::Type::getInt64PtrTy(Ctx), llvm::Type::getInt64Ty(Ctx)};
-  return llvm::StructType::create(Ctx, types);
+  static llvm::Type* result = llvm::StructType::create(Ctx, types);
+  return result;
 }
 
 
@@ -55,6 +56,11 @@ struct SymbolTable {
       } else if (t == Type::t_bool) {
         V = Builder.CreateAlloca(
          llvm::Type::getInt1Ty(TheContext),
+         llvm::ConstantInt::get(TheContext, llvm::APInt(/*nbits*/32, 1, /*bool*/false)),
+         name);
+      } else if (t == Type::t_array) {
+        V = Builder.CreateAlloca(
+         getArrayType(TheContext),
          llvm::ConstantInt::get(TheContext, llvm::APInt(/*nbits*/32, 1, /*bool*/false)),
          name);
       }
@@ -163,6 +169,11 @@ private:
     args = {llvm::Type::getInt64Ty(TheContext)};
     FT = FunctionType::get(llvm::Type::getInt64PtrTy(TheContext), args, false);
     Function::Create(FT, Function::ExternalLinkage, "heapalloc", TheModule.get());
+
+    assert(TheModule->getFunction("input"));
+    assert(TheModule->getFunction("printint"));
+    assert(TheModule->getFunction("printstring"));
+    assert(TheModule->getFunction("heapalloc"));
 
   }
 

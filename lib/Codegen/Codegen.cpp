@@ -19,7 +19,7 @@ llvm::Type* LLVMTypeFromString(std::string in, LLVMContext &C) {
     {"int", llvm::Type::getInt64Ty(C)},
     {"bool", llvm::Type::getInt1Ty(C)},
     {"void", llvm::Type::getVoidTy(C)},
-    //{"array", Type::t_array},
+    {"array", getArrayType(C)},
     //{"str", Type::t_str}
   };
   return map[in];
@@ -43,8 +43,7 @@ Type GetLittleType (Value *V) {
   } else if (V->getType()->isIntegerTy(1)) {
     return Type::t_bool;
   } else {
-    assert(false && "unimplemented");
-    return Type::t_void;
+    return Type::t_array;
   }
 }
 
@@ -233,8 +232,17 @@ BasicBlock* Codegen::processStmt(SyntaxTree& stmt, BasicBlock* BB) {
     // go through args and check if they are strings or ints
     for (auto arg : stmt.Children[0].Children) {
       auto t = processExpr(arg);
+      std::vector<Value*> args = {t};
       assert(t->getType()->isIntegerTy(64) || t->getType()->isPointerTy());
+      if (t->getType()->isIntegerTy(64)) {
+        Builder.CreateCall(TheModule->getFunction("printint"), args);
+      } else {
+        Builder.CreateCall(TheModule->getFunction("printstring"), args);
+      }
+
     }
+
+    return BB;
 
   } else if (st == "scall") {
     // type checking for call expressions
@@ -274,15 +282,11 @@ BasicBlock* Codegen::processStmt(SyntaxTree& stmt, BasicBlock* BB) {
   } else if (st == "store") {
     // check if array exists and index, rhs is integer
     assert(stmt.Children.size() == 3);
-//     assert(checkVar(stmt.Children[0]) == Type::t_array);
-//     assert(processExpr(stmt.Children[1]) == Type::t_int);
-//     assert(processExpr(stmt.Children[2]) == Type::t_int);
+
     auto v = checkVarNoDeref(stmt.Children[0]);
     auto i = processExpr(stmt.Children[1]);
     auto e = processExpr(stmt.Children[2]);
 
-//     v->getType()->print(llvm::errs());
-//     assert(v->getType() == getArrayType(TheContext));
     assert(i->getType() == llvm::Type::getInt64Ty(TheContext));
     assert(e->getType() == llvm::Type::getInt64Ty(TheContext));
 
@@ -321,11 +325,19 @@ Value* Codegen::processCall(SyntaxTree& st) {
   auto name = st.Children[0].Attributes["val"];
   auto args = st.Children[1];
   Function *F = syms.functions[name];
+  assert (F && "Use of Undefined function");
   assert(args.Children.size() == F->arg_size());
   int i = 0;
   std::vector<Value*> list;
+  F->print(llvm::errs());
+
   for (Argument& param : F->args()) {
     auto t = processExpr(args.Children[i++]);
+
+    if (t->getType() != param.getType()) {
+      t->getType()->print(llvm::errs());
+      param.getType()->print(llvm::errs());
+    }
     assert(t->getType() == param.getType());
     list.push_back(t);
   }
@@ -418,13 +430,9 @@ Value* Codegen::processExpr(SyntaxTree& expr) { // Might return a llvm::Value* ?
   } else if (e == "call") {
     return processCall(expr);
   }  else if (e == "input()") {
-//     return Type::t_int;
-    assert(false && "unimplemented");
-    return nullptr;
+    return Builder.CreateCall(TheModule->getFunction("input"));
   } else if (e == "str") {
-//     return Type::t_str;
-    assert(false && "unimplemented");
-    return nullptr;
+    return Builder.CreateGlobalStringPtr(expr.Attributes["val"]);
   } else if (e == "binexpr") {
     assert(expr.Children.size() == 3);
     auto op = expr.Children[1].Children[0].Node;
