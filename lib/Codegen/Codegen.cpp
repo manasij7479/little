@@ -1,5 +1,6 @@
 #include "little/Codegen/Codegen.h"
 #include <llvm/IR/Instructions.h>
+#include <llvm/Support/TargetSelect.h>
 #include <iostream>
 
 namespace little {
@@ -74,8 +75,19 @@ void SymbolTable::dump(std::ostream& out) {
   }
 }
 
-Codegen::Codegen(mm::SyntaxTree st_): st(st_), Builder(TheContext), syms(TheContext, Builder) {
+std::string MangleName(std::string name) {
+  if (name == "main") {
+    return "l_main";
+  } else if (name == "abort") {
+    return "l_abort";
+  } else if (name == "exp") {
+    return "l_exp";
+  } else {
+    return name;
+  }
+}
 
+Codegen::Codegen(mm::SyntaxTree st_): st(st_), Builder(TheContext), syms(TheContext, Builder) {
   TheModule = llvm::make_unique<Module>("main", TheContext);
 
   DeclareRuntimeFunctions();
@@ -112,12 +124,8 @@ Codegen::Codegen(mm::SyntaxTree st_): st(st_), Builder(TheContext), syms(TheCont
 
     auto FT = FunctionType::get(llvmrettype, argtypes, false);
 
-    if (name.Attributes["val"] == "main") {
-      name.Attributes["val"] = "l_main";
-    }
-
     Function *F =
-      Function::Create(FT, Function::ExternalLinkage, name.Attributes["val"], TheModule.get());
+      Function::Create(FT, Function::ExternalLinkage, MangleName(name.Attributes["val"]), TheModule.get());
 
   // Set names for all arguments.
     unsigned Idx = 0;
@@ -131,11 +139,7 @@ Codegen::Codegen(mm::SyntaxTree st_): st(st_), Builder(TheContext), syms(TheCont
 void Codegen::processFunction(SyntaxTree& function) {
   // Codegen for a specific function
 
-  auto name = function.Children[1].Attributes["val"];
-  if (name == "main") {
-    name = "l_main";
-  }
-
+  auto name = MangleName(function.Children[1].Attributes["val"]);
   FunctionBeingProcessed = TheModule->getFunction(name);
 
   Function* F = FunctionBeingProcessed;
@@ -440,7 +444,7 @@ std::pair<BasicBlock*, BasicBlock*>
 
 Value* Codegen::processCall(SyntaxTree& st) {
   assert(st.Children.size() == 2);
-  auto name = st.Children[0].Attributes["val"];
+  auto name = MangleName(st.Children[0].Attributes["val"]);
   auto args = st.Children[1];
   Function *F = TheModule->getFunction(name);
   assert (F && "Use of Undefined function");

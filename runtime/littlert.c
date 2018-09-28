@@ -20,7 +20,7 @@ void printint(int64_t x) {
 }
 
 void printstring(char* str) {
-  puts(str);
+  printf("%s", str);
 }
 
 void l_abort(char* str) {
