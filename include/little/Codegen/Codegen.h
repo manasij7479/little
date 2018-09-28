@@ -167,21 +167,26 @@ private:
     FT = FunctionType::get(llvm::Type::getInt64PtrTy(TheContext), args, false);
     Function::Create(FT, Function::ExternalLinkage, "heapalloc", TheModule.get());
 
+    args = {llvm::Type::getInt64PtrTy(TheContext)};
+    FT = FunctionType::get(llvm::Type::getVoidTy(TheContext), args, false);
+    Function::Create(FT, Function::ExternalLinkage, "heapfree", TheModule.get());
+
     args = {llvm::Type::getInt8PtrTy(TheContext)};
     FT = FunctionType::get(llvm::Type::getVoidTy(TheContext), args, false);
-    Function::Create(FT, Function::ExternalLinkage, "abort", TheModule.get());
+    Function::Create(FT, Function::ExternalLinkage, "l_abort", TheModule.get());
 
     args = {llvm::Type::getInt64Ty(TheContext), llvm::Type::getInt64Ty(TheContext)};
     FT = FunctionType::get(llvm::Type::getInt64Ty(TheContext), args, false);
-    Function::Create(FT, Function::ExternalLinkage, "exp", TheModule.get());
+    Function::Create(FT, Function::ExternalLinkage, "l_exp", TheModule.get());
 
 
     assert(TheModule->getFunction("input"));
-    assert(TheModule->getFunction("abort"));
+    assert(TheModule->getFunction("l_abort"));
     assert(TheModule->getFunction("printint"));
     assert(TheModule->getFunction("printstring"));
     assert(TheModule->getFunction("heapalloc"));
-    assert(TheModule->getFunction("exp"));
+    assert(TheModule->getFunction("heapfree"));
+    assert(TheModule->getFunction("l_exp"));
 
   }
 

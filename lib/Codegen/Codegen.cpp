@@ -112,6 +112,10 @@ Codegen::Codegen(mm::SyntaxTree st_): st(st_), Builder(TheContext), syms(TheCont
 
     auto FT = FunctionType::get(llvmrettype, argtypes, false);
 
+    if (name.Attributes["val"] == "main") {
+      name.Attributes["val"] = "l_main";
+    }
+
     Function *F =
       Function::Create(FT, Function::ExternalLinkage, name.Attributes["val"], TheModule.get());
 
@@ -126,7 +130,13 @@ Codegen::Codegen(mm::SyntaxTree st_): st(st_), Builder(TheContext), syms(TheCont
 
 void Codegen::processFunction(SyntaxTree& function) {
   // Codegen for a specific function
-  FunctionBeingProcessed = TheModule->getFunction(function.Children[1].Attributes["val"]);
+
+  auto name = function.Children[1].Attributes["val"];
+  if (name == "main") {
+    name = "l_main";
+  }
+
+  FunctionBeingProcessed = TheModule->getFunction(name);
 
   Function* F = FunctionBeingProcessed;
 
@@ -150,7 +160,7 @@ void Codegen::processFunction(SyntaxTree& function) {
       Builder.CreateRetVoid();
     }
     else if (auto I = llvm::dyn_cast<CallInst>(&newBB.second->back())) {
-      if (I->getCalledFunction()->getName() == "abort") {
+      if (I->getCalledFunction()->getName() == "l_abort") {
         Builder.SetInsertPoint(newBB.second);
         Builder.CreateUnreachable();
       }
@@ -575,7 +585,7 @@ Value* Codegen::processExpr(SyntaxTree& expr) { // Might return a llvm::Value* ?
       }
       if (op == "^") {
         std::vector<Value *> args = {lhs, rhs};
-        return Builder.CreateCall(TheModule->getFunction("exp"), args);
+        return Builder.CreateCall(TheModule->getFunction("l_exp"), args);
       }
       if (op == "%") {
         return Builder.CreateSRem(lhs, rhs);
