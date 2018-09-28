@@ -30,7 +30,7 @@ std::string StringFromType(Type t);
 llvm::Type *getArrayType(LLVMContext &Ctx) {
   static std::vector<llvm::Type*> types =
   {llvm::Type::getInt64PtrTy(Ctx), llvm::Type::getInt64Ty(Ctx)};
-  static llvm::Type* result = llvm::StructType::create(Ctx, types);
+  static llvm::Type* result = llvm::StructType::create(Ctx, types, "lil.int64array");
   return result;
 }
 
@@ -111,12 +111,7 @@ struct SymbolTable {
   }
   Value* lookup(std::string name);
   std::vector<std::map<std::string, Value*>> table;
-  std::map<std::string, Function*> functions;
   // Functions don't need a stack because they are all in global scope
-
-  llvm::Type *getFunctionReturnType(std::string fun) {
-    return functions[fun]->getReturnType();
-  }
 
   void dump(std::ostream& out);
 
@@ -128,16 +123,16 @@ class Codegen {
 public:
   Codegen(mm::SyntaxTree st_);
 
-  bool operator()(std::string filename) { // other llvm options?
+  llvm::Module *operator()(std::string filename) { // other llvm options?
     // Pass 2 : Actual Codegen
 
     for (auto&& function : st.Children) {
       processFunction(function);
-      assert(!verifyFunction(*FunctionBeingProcessed, &llvm::errs()));
+//       assert(!verifyFunction(*FunctionBeingProcessed, &llvm::errs()));
     }
-    assert(!verifyModule(*TheModule, &llvm::errs()));
-    TheModule->print(errs(), nullptr);
-    return true;
+    assert(!verifyModule(*TheModule));
+//     TheModule->print(errs(), nullptr);
+    return TheModule.get();
   }
   void dumpSyms(std::ostream& out) {
     syms.dump(out);
@@ -146,8 +141,10 @@ private:
   Function *FunctionBeingProcessed;
 
   void processFunction(SyntaxTree& function);
-  BasicBlock* processStmtBlock(SyntaxTree& stb, std::string name = "");
-  BasicBlock* processStmt(SyntaxTree& stmt, BasicBlock* BB);
+  std::pair<BasicBlock*, BasicBlock*>
+    processStmtBlock(SyntaxTree& stb, std::string name = "");
+  std::pair<BasicBlock*, BasicBlock*>
+    processStmt(SyntaxTree& stmt, BasicBlock* BB);
   Value* processExpr(SyntaxTree& expr);
   Value* processCall(SyntaxTree& st);
   Value* checkVar(SyntaxTree& st);
@@ -170,10 +167,21 @@ private:
     FT = FunctionType::get(llvm::Type::getInt64PtrTy(TheContext), args, false);
     Function::Create(FT, Function::ExternalLinkage, "heapalloc", TheModule.get());
 
+    args = {llvm::Type::getInt8PtrTy(TheContext)};
+    FT = FunctionType::get(llvm::Type::getVoidTy(TheContext), args, false);
+    Function::Create(FT, Function::ExternalLinkage, "abort", TheModule.get());
+
+    args = {llvm::Type::getInt64Ty(TheContext), llvm::Type::getInt64Ty(TheContext)};
+    FT = FunctionType::get(llvm::Type::getInt64Ty(TheContext), args, false);
+    Function::Create(FT, Function::ExternalLinkage, "exp", TheModule.get());
+
+
     assert(TheModule->getFunction("input"));
+    assert(TheModule->getFunction("abort"));
     assert(TheModule->getFunction("printint"));
     assert(TheModule->getFunction("printstring"));
     assert(TheModule->getFunction("heapalloc"));
+    assert(TheModule->getFunction("exp"));
 
   }
 

@@ -27,15 +27,21 @@ int main(int argc, char** argv) {
 
   auto st = parser::ParseLittleProgram()(in);
 
+  llvm::Module *TU = nullptr;
+
   if (st && in.eof()) {
     if (args.find("--print-ast") != args.end()) {
       st.dump(std::cout);
     }
     Codegen gen(st);
-    gen.dumpSyms(std::cerr);
-    gen("dummy");
+//     gen.dumpSyms(std::cerr);
+    TU = gen("dummy");
     
-    return 0;
+    if (TU && args.find("--print-ir") != args.end()) {
+      TU->print(llvm::outs(), nullptr);
+    }
+
+    return TU? 0 : 1;
   } else {
     st.dump(std::cerr);
     if (!in.eof()) {

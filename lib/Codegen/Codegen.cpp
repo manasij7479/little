@@ -1,4 +1,5 @@
 #include "little/Codegen/Codegen.h"
+#include <llvm/IR/Instructions.h>
 #include <iostream>
 
 namespace little {
@@ -119,7 +120,6 @@ Codegen::Codegen(mm::SyntaxTree st_): st(st_), Builder(TheContext), syms(TheCont
     for (auto &Arg : F->args())
       Arg.setName(Args[Idx++]);
 
-    syms.functions[name.Attributes["val"]] = F;
   }
 
 }
@@ -143,10 +143,23 @@ void Codegen::processFunction(SyntaxTree& function) {
   }
   auto newBB = processStmtBlock(body, "body");
   Builder.SetInsertPoint(BB);
-  Builder.CreateBr(newBB);
+  Builder.CreateBr(newBB.first);
+  if (!newBB.second->getTerminator()) {
+    if (F->getReturnType() == llvm::Type::getVoidTy(TheContext)) {
+      Builder.SetInsertPoint(newBB.second);
+      Builder.CreateRetVoid();
+    }
+    else if (auto I = llvm::dyn_cast<CallInst>(&newBB.second->back())) {
+      if (I->getCalledFunction()->getName() == "abort") {
+        Builder.SetInsertPoint(newBB.second);
+        Builder.CreateUnreachable();
+      }
+    }
+  }
   syms.popScope();
 }
-BasicBlock* Codegen::processStmtBlock(SyntaxTree& stb, std::string name) {
+std::pair<BasicBlock*, BasicBlock*>
+  Codegen::processStmtBlock(SyntaxTree& stb, std::string name) {
   assert(stb.Node == "stmtblock");
   syms.newScope();
   BasicBlock *BB = BasicBlock::Create(TheContext, name, FunctionBeingProcessed);
@@ -154,16 +167,24 @@ BasicBlock* Codegen::processStmtBlock(SyntaxTree& stb, std::string name) {
   auto FirstBB = BB;
   for (auto&& stmt : stb.Children) {
     assert(stmt.Node == "stmt");
-    BB = processStmt(stmt, BB);
+    BB = processStmt(stmt, BB).second;
     Builder.SetInsertPoint(BB);
   }
   syms.popScope();
-  return FirstBB;
+  return {FirstBB, BB};
 }
-BasicBlock* Codegen::processStmt(SyntaxTree& stmt, BasicBlock* BB) {
+std::pair<BasicBlock*, BasicBlock*>
+  Codegen::processStmt(SyntaxTree& stmt, BasicBlock* BB) {
   auto st = stmt.Node;
-  if (st == "stmt" || st == "else") {
+  if (st == "stmt") {
     return processStmt(stmt.Children[0], BB);
+  }
+  if (st == "else") {
+    if (stmt.Children.size() == 1) {
+      return processStmt(stmt.Children[0], BB);
+    } else {
+      return {BB, BB}; // missing else, no op
+    }
   }
   if (st == "stmtblock") {
     return processStmtBlock(stmt);
@@ -173,25 +194,30 @@ BasicBlock* Codegen::processStmt(SyntaxTree& stmt, BasicBlock* BB) {
     assert(t->getType()->isIntegerTy(1) && "If condition must be boolean");
 
     auto ifbb = processStmt(stmt.Children[1], BB); // if body
-    ifbb->setName("if.true");
+    ifbb.first->setName("if.true");
     Builder.SetInsertPoint(BB);
-    BasicBlock *elsebb = nullptr;
-    if (stmt.Children[1].Children.size() == 1) {
+    std::pair<BasicBlock *, BasicBlock *> elsebb = {nullptr, nullptr};
+    if (stmt.Children[2].Children.size() == 1) {
       elsebb = processStmt(stmt.Children[2].Children[0], BB); // optional else body
-      elsebb->setName("if.false");
+      elsebb.first->setName("if.false");
     }
-    if (!elsebb) {
-      elsebb = BasicBlock::Create(TheContext, "if.false.empty", FunctionBeingProcessed);
+    if (!elsebb.first) {
+      elsebb.first = BasicBlock::Create(TheContext, "if.false.empty", FunctionBeingProcessed);
+      elsebb.second = elsebb.first;
     }
     Builder.SetInsertPoint(BB);
-    Builder.CreateCondBr(t, ifbb, elsebb);
+    Builder.CreateCondBr(t, ifbb.first, elsebb.first);
     BasicBlock* endif = BasicBlock::Create(TheContext, "if.end", FunctionBeingProcessed);
 
-    Builder.SetInsertPoint(ifbb);
-    Builder.CreateBr(endif);
-    Builder.SetInsertPoint(elsebb);
-    Builder.CreateBr(endif);
-    return endif;
+    if (!ifbb.second->getTerminator()) {
+      Builder.SetInsertPoint(ifbb.second);
+      Builder.CreateBr(endif);
+    }
+    if (!elsebb.second->getTerminator()) {
+      Builder.SetInsertPoint(elsebb.second);
+      Builder.CreateBr(endif);
+    }
+    return {ifbb.first, endif};
 
   } else if (st == "while") {
     assert(stmt.Children.size() == 2);
@@ -201,33 +227,112 @@ BasicBlock* Codegen::processStmt(SyntaxTree& stmt, BasicBlock* BB) {
 
     if (!t->getType()->isIntegerTy(1)) {
       std::cerr << "Bad while cond " << "\n";
-//       t->dump(); // FIXME Doesn't link
     }
     assert(t->getType()->isIntegerTy(1) && "While condition must be boolean");
 
     auto loopbb = processStmt(stmt.Children[1], BB); // while body
-    loopbb->setName("while.body");
+    loopbb.first->setName("while.body");
 
     BasicBlock* endwhile = BasicBlock::Create(TheContext, "while.end", FunctionBeingProcessed);
 
     Builder.SetInsertPoint(BB);
     Builder.CreateBr(header);
     Builder.SetInsertPoint(header);
-    Builder.CreateCondBr(t, loopbb, endwhile);
-    Builder.SetInsertPoint(loopbb);
+    Builder.CreateCondBr(t, loopbb.first, endwhile);
+    Builder.SetInsertPoint(loopbb.second);
     Builder.CreateBr(header);
-    return endwhile;
+    return {header, endwhile};
 
   } else if (st == "for") {
     assert(stmt.Children.size() == 2);
 
     assert(stmt.Children[0].Children.size() == 2);
-    assert(false && "unimplemented");
 //     assert(checkVar(stmt.Children[0].Children[0]) == Type::t_int);
 //     assert(processExpr(stmt.Children[0].Children[1]) == Type::t_array);
+    BasicBlock* preheader = BasicBlock::Create(TheContext, "for.preheader", FunctionBeingProcessed);
+    Builder.SetInsertPoint(preheader);
 
-    //processStmt(stmt.Children[1]); // for body
-    // check for cond, rhs must be array, lhs must be integer
+    assert(stmt.Children[0].Children[1].Children.size() == 1);
+    auto array = checkVarNoDeref(stmt.Children[0].Children[1].Children[0]);
+
+    if(array->getType()->getPointerElementType() != getArrayType(TheContext)) {
+      array->print(llvm::errs());
+      llvm::errs() << "\n";
+      array->getType()->print(llvm::errs());
+      llvm::errs() << "\n";
+    }
+    assert(array->getType()->getPointerElementType() == getArrayType(TheContext));
+
+
+    auto i = Builder.CreateAlloca(llvm::Type::getInt64Ty(TheContext),
+      llvm::ConstantInt::get(TheContext, llvm::APInt(/*nbits*/64, 0, /*bool*/false)));
+
+    Builder.CreateStore(llvm::ConstantInt::get(TheContext, llvm::APInt(/*nbits*/64, 0, /*bool*/false)), i);
+    // i = 0
+
+    std::vector<Value*> ArraySizeIdx =
+    {
+      llvm::ConstantInt::get(TheContext, llvm::APInt(/*nbits*/32, 0, /*bool*/false)),
+      llvm::ConstantInt::get(TheContext, llvm::APInt(/*nbits*/32, 1, /*bool*/false))
+    };
+    auto sizeptr = Builder.CreateGEP(array, ArraySizeIdx);
+
+    BasicBlock* header = BasicBlock::Create(TheContext, "for.header", FunctionBeingProcessed);
+    Builder.SetInsertPoint(header);
+
+
+    auto cond = Builder.CreateICmpSLT(Builder.CreateLoad(i), Builder.CreateLoad(sizeptr));
+
+
+    auto v = checkVarNoDeref(stmt.Children[0].Children[0]);
+    std::vector<Value*> ArrayMemIdx =
+    {
+      llvm::ConstantInt::get(TheContext, llvm::APInt(/*nbits*/32, 0, /*bool*/false)),
+      llvm::ConstantInt::get(TheContext, llvm::APInt(/*nbits*/32, 0, /*bool*/false))
+    };
+    auto addr = Builder.CreateGEP(array, ArrayMemIdx);
+    auto memptr = Builder.CreateLoad(addr);
+    auto targetptr = Builder.CreateGEP(memptr, Builder.CreateLoad(i));
+
+    auto value = Builder.CreateLoad(targetptr);
+    // array[i]
+
+    Builder.CreateStore(value, v);
+    // v = array[i]
+
+
+    auto  loopbb = processStmt(stmt.Children[1], header); // for body
+    loopbb.first->setName("for.body");
+
+
+    BasicBlock* inc = BasicBlock::Create(TheContext, "for.inc", FunctionBeingProcessed);
+    Builder.SetInsertPoint(inc);
+
+    auto newi = Builder.CreateAdd
+      (Builder.CreateLoad(i), llvm::ConstantInt::get(TheContext, llvm::APInt(/*nbits*/64, 1, /*bool*/false)));
+
+    Builder.CreateStore(newi, i);
+
+    BasicBlock* endfor = BasicBlock::Create(TheContext, "for.end", FunctionBeingProcessed);
+
+    Builder.SetInsertPoint(loopbb.second);
+    if (!loopbb.second->getTerminator()) {
+      Builder.CreateBr(inc);
+    }
+
+    Builder.SetInsertPoint(inc);
+    Builder.CreateBr(header);
+
+    Builder.SetInsertPoint(preheader);
+    Builder.CreateBr(header);
+
+    Builder.SetInsertPoint(header);
+    Builder.CreateCondBr(cond, loopbb.first, endfor);
+
+    Builder.SetInsertPoint(BB);
+    Builder.CreateBr(preheader);
+
+    return {preheader, endfor};
   } else if (st == "print") {
     // go through args and check if they are strings or ints
     for (auto arg : stmt.Children[0].Children) {
@@ -242,12 +347,12 @@ BasicBlock* Codegen::processStmt(SyntaxTree& stmt, BasicBlock* BB) {
 
     }
 
-    return BB;
+    return {BB, BB};
 
   } else if (st == "scall") {
     // type checking for call expressions
     processCall(stmt); // no need to bother about return type
-    return BB;
+    return {BB, BB};
 
   } else if (st == "assign") {
     // check if type matches
@@ -257,7 +362,7 @@ BasicBlock* Codegen::processStmt(SyntaxTree& stmt, BasicBlock* BB) {
     assert(v->getType()->getPointerElementType() == e->getType());
 
     Builder.CreateStore(e, v);
-    return BB;
+    return {BB, BB};
 
   } else if (st == "arraydecls") {
     for (auto arraydecl : stmt.Children) {
@@ -267,7 +372,7 @@ BasicBlock* Codegen::processStmt(SyntaxTree& stmt, BasicBlock* BB) {
       assert(size->getType()->isIntegerTy(64));
       syms.insertArray(name, size);
     }
-    return BB;
+    return {BB, BB};
 
   } else if (st == "decls") {
     assert(stmt.Children.size() == 2);
@@ -277,7 +382,7 @@ BasicBlock* Codegen::processStmt(SyntaxTree& stmt, BasicBlock* BB) {
       auto name = id.Attributes["val"];
       syms.insert(name, type);
     }
-    return BB;
+    return {BB, BB};
     // update symbol table
   } else if (st == "store") {
     // check if array exists and index, rhs is integer
@@ -300,18 +405,21 @@ BasicBlock* Codegen::processStmt(SyntaxTree& stmt, BasicBlock* BB) {
     auto targetptr = Builder.CreateGEP(memptr, i);
     Builder.CreateStore(e, targetptr);
 
-    return BB;
+    return {BB, BB};
 
   } else if (st == "return") {
     // check if return type matches with function
     auto rett = FunctionBeingProcessed->getReturnType();
     switch (stmt.Children[0].Children.size()) {
-      case 0 : assert(rett == llvm::Type::getVoidTy(TheContext)); Builder.CreateRetVoid(); return BB;
+      case 0 : {
+        assert(rett == llvm::Type::getVoidTy(TheContext)); Builder.CreateRetVoid();
+        return {BB, BB};
+      }
       case 1 : {
         auto t = processExpr(stmt.Children[0].Children[0]);
         assert(rett == t->getType());
         Builder.CreateRet(t);
-        return BB;
+        return {BB, BB};
       }
       default : assert(false && "Functions can return at most one value");
     }
@@ -324,12 +432,11 @@ Value* Codegen::processCall(SyntaxTree& st) {
   assert(st.Children.size() == 2);
   auto name = st.Children[0].Attributes["val"];
   auto args = st.Children[1];
-  Function *F = syms.functions[name];
+  Function *F = TheModule->getFunction(name);
   assert (F && "Use of Undefined function");
   assert(args.Children.size() == F->arg_size());
   int i = 0;
   std::vector<Value*> list;
-  F->print(llvm::errs());
 
   for (Argument& param : F->args()) {
     auto t = processExpr(args.Children[i++]);
@@ -467,8 +574,8 @@ Value* Codegen::processExpr(SyntaxTree& expr) { // Might return a llvm::Value* ?
         return Builder.CreateSDiv(lhs, rhs);
       }
       if (op == "^") {
-        assert(false && "unimplemented");
-        return nullptr;
+        std::vector<Value *> args = {lhs, rhs};
+        return Builder.CreateCall(TheModule->getFunction("exp"), args);
       }
       if (op == "%") {
         return Builder.CreateSRem(lhs, rhs);
