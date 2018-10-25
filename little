@@ -1,0 +1,3 @@
+#!/bin/bash
+./build/driver/little-frontend $1 --print-ir > /tmp/foo.ll
+clang -Wno-override-module ./build/littlert.c /tmp/foo.ll -O2 -o a.out
