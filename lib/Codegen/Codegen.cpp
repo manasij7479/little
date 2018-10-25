@@ -322,7 +322,8 @@ std::pair<BasicBlock*, BasicBlock*>
 
     auto cond = Builder.CreateICmpSLT(Builder.CreateLoad(i), Builder.CreateLoad(sizeptr));
 
-
+    syms.newScope();
+    syms.insert(stmt.Children[0].Children[0].Attributes["val"], Type::t_int);
     auto v = checkVarNoDeref(stmt.Children[0].Children[0]);
     std::vector<Value*> ArrayMemIdx =
     {
@@ -370,6 +371,8 @@ std::pair<BasicBlock*, BasicBlock*>
 
     Builder.SetInsertPoint(BB);
     Builder.CreateBr(preheader);
+
+    syms.popScope();
 
     return {preheader, endfor};
   } else if (st == "print") {
