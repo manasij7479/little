@@ -15,12 +15,17 @@ int main(int argc, char** argv) {
 
   Preprocessor file(filename);
 
-  std::set<std::string> args;
+  std::map<std::string, int> args;
   for (int i = 2; i < argc; ++ i) {
-    args.insert(argv[i]);
+    args[argv[i]] = i;
   }
   if (args.find("--debug-pp") != args.end()) {
     file.printPreprocessed(std::cout);
+  }
+
+  uint Width = 64;
+  if (args.find("--width") != args.end()) {
+    Width = std::stoi(argv[args["--width"] + 1]);
   }
 
   mm::Stream in(file.getPtr(), 0, file.getLength() - 1);
@@ -33,10 +38,10 @@ int main(int argc, char** argv) {
     if (args.find("--print-ast") != args.end()) {
       st.dump(std::cout);
     }
-    Codegen gen(st);
+    Codegen gen(st, Width);
 //     gen.dumpSyms(std::cerr);
     TU = gen("dummy");
-    
+
     if (TU && args.find("--print-ir") != args.end()) {
       TU->print(llvm::outs(), nullptr);
     }

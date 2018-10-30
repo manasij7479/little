@@ -23,14 +23,16 @@ namespace little {
 using mm::SyntaxTree;
 using namespace llvm;
 
+extern uint Width;
+
 enum class Type {t_int, t_bool, t_void, t_array, t_fun, t_str};
 Type TypeFromString(std::string in);
 std::string StringFromType(Type t);
 
 llvm::Type *getArrayType(LLVMContext &Ctx) {
   static std::vector<llvm::Type*> types =
-  {llvm::Type::getInt64PtrTy(Ctx), llvm::Type::getInt64Ty(Ctx)};
-  static llvm::Type* result = llvm::StructType::create(Ctx, types, "lil.int64array");
+  {llvm::Type::getIntNPtrTy(Ctx, Width), llvm::Type::getIntNTy(Ctx, Width)};
+  static llvm::Type* result = llvm::StructType::create(Ctx, types, "lil.intarray");
   return result;
 }
 
@@ -50,7 +52,7 @@ struct SymbolTable {
       Value* V = nullptr;
       if (t == Type::t_int) {
        V = Builder.CreateAlloca(
-         llvm::Type::getInt64Ty(TheContext),
+         llvm::Type::getIntNTy(TheContext, Width),
          llvm::ConstantInt::get(TheContext, llvm::APInt(/*nbits*/32, 1, /*bool*/false)),
          name);
       } else if (t == Type::t_bool) {
@@ -77,7 +79,7 @@ struct SymbolTable {
          llvm::ConstantInt::get(TheContext, llvm::APInt(/*nbits*/32, 1, /*bool*/false)),
          name);
 
-      Value* Mem = Builder.CreateAlloca(llvm::Type::getInt64Ty(TheContext), Size);
+      Value* Mem = Builder.CreateAlloca(llvm::Type::getIntNTy(TheContext, Width), Size);
 
       std::vector<Value*> ArrayMemIdx =
       {
@@ -121,7 +123,7 @@ struct SymbolTable {
 
 class Codegen {
 public:
-  Codegen(mm::SyntaxTree st_);
+  Codegen(mm::SyntaxTree st_, uint IntWidth_);
 
   llvm::Module *operator()(std::string filename) { // other llvm options?
     // Pass 2 : Actual Codegen
@@ -130,8 +132,9 @@ public:
       processFunction(function);
 //       assert(!verifyFunction(*FunctionBeingProcessed, &llvm::errs()));
     }
-    assert(!verifyModule(*TheModule));
-//     TheModule->print(errs(), nullptr);
+
+    // TheModule->print(errs(), nullptr);
+    assert(!verifyModule(*TheModule, &llvm::errs()));
     return TheModule.get();
   }
   void dumpSyms(std::ostream& out) {
@@ -197,6 +200,8 @@ private:
   IRBuilder<> Builder;
   std::unique_ptr<Module> TheModule;
   std::map<std::string, Value *> NamedValues;
+
+  uint IntWidth;
 
 };
 }

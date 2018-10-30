@@ -5,6 +5,8 @@
 
 namespace little {
 
+uint Width = 64;
+
 Type TypeFromString(std::string in) {
   static std::map<std::string, Type> map = {
     {"int", Type::t_int},
@@ -43,7 +45,7 @@ std::string unescape(const std::string& s)
 
 llvm::Type* LLVMTypeFromString(std::string in, LLVMContext &C) {
   static std::map<std::string, llvm::Type*> map = {
-    {"int", llvm::Type::getInt64Ty(C)},
+    {"int", llvm::Type::getIntNTy(C, Width)},
     {"bool", llvm::Type::getInt1Ty(C)},
     {"void", llvm::Type::getVoidTy(C)},
     {"array", getArrayType(C)},
@@ -64,8 +66,34 @@ std::string StringFromType(Type t) {
   return "bad_type";
 }
 
+llvm::Value *RTToInternal(llvm::Value *V, llvm::IRBuilder<> *B, LLVMContext &C) {
+  if (!V->getType()->isIntegerTy(64)) {
+    return V;
+  }
+  if (Width == 64) {
+    return V;
+  } else if (Width < 64) {
+    return B->CreateTrunc(V, llvm::Type::getIntNTy(C, Width));
+  } else {
+    return B->CreateSExt(V, llvm::Type::getIntNTy(C, Width));
+  }
+}
+
+llvm::Value *InternalToRT(llvm::Value *V, llvm::IRBuilder<> *B, LLVMContext &C) {
+  if (!V->getType()->isIntegerTy(Width)) {
+    return V;
+  }
+  if (Width == 64) {
+    return V;
+  } else if (Width > 64) {
+    return B->CreateTrunc(V, llvm::Type::getIntNTy(C, 64));
+  } else {
+    return B->CreateSExt(V, llvm::Type::getIntNTy(C, 64));
+  }
+}
+
 Type GetLittleType (Value *V) {
-  if (V->getType()->isIntegerTy(64)) {
+  if (V->getType()->isIntegerTy(Width)) {
     return Type::t_int;
   } else if (V->getType()->isIntegerTy(1)) {
     return Type::t_bool;
@@ -112,7 +140,11 @@ std::string MangleName(std::string name) {
   }
 }
 
-Codegen::Codegen(mm::SyntaxTree st_): st(st_), Builder(TheContext), syms(TheContext, Builder) {
+Codegen::Codegen(mm::SyntaxTree st_, uint IntWidth_): st(st_),
+    Builder(TheContext), syms(TheContext, Builder), IntWidth(IntWidth_) {
+
+  Width = IntWidth_; //FIXME: Get rid of global :(
+
   TheModule = llvm::make_unique<Module>("main", TheContext);
 
   DeclareRuntimeFunctions();
@@ -135,7 +167,7 @@ Codegen::Codegen(mm::SyntaxTree st_): st(st_), Builder(TheContext), syms(TheCont
     std::vector<std::string> Args;
     auto llvmrettype = LLVMTypeFromString(rettype.Children[0].Node, TheContext);
 
-    assert(llvmrettype != llvm::Type::getInt64PtrTy(TheContext) && "Function return type can not be array");
+    assert(llvmrettype != llvm::Type::getIntNPtrTy(TheContext, Width) && "Function return type can not be array");
 
     for (auto&& arg : args.Children) {
       assert(arg.Node == "decl");
@@ -149,8 +181,12 @@ Codegen::Codegen(mm::SyntaxTree st_): st(st_), Builder(TheContext), syms(TheCont
 
     auto FT = FunctionType::get(llvmrettype, argtypes, false);
 
+    auto linkage = Function::InternalLinkage;
+    if (name.Attributes["val"] == "main")
+      linkage = Function::ExternalLinkage;
+
     Function *F =
-      Function::Create(FT, Function::ExternalLinkage, MangleName(name.Attributes["val"]), TheModule.get());
+      Function::Create(FT, linkage, MangleName(name.Attributes["val"]), TheModule.get());
 
   // Set names for all arguments.
     unsigned Idx = 0;
@@ -303,10 +339,10 @@ std::pair<BasicBlock*, BasicBlock*>
     assert(array->getType()->getPointerElementType() == getArrayType(TheContext));
 
 
-    auto i = Builder.CreateAlloca(llvm::Type::getInt64Ty(TheContext),
-      llvm::ConstantInt::get(TheContext, llvm::APInt(/*nbits*/64, 0, /*bool*/false)));
+    auto i = Builder.CreateAlloca(llvm::Type::getIntNTy(TheContext, Width),
+      llvm::ConstantInt::get(TheContext, llvm::APInt(/*nbits*/Width, 0, /*bool*/false)));
 
-    Builder.CreateStore(llvm::ConstantInt::get(TheContext, llvm::APInt(/*nbits*/64, 0, /*bool*/false)), i);
+    Builder.CreateStore(llvm::ConstantInt::get(TheContext, llvm::APInt(/*nbits*/Width, 0, /*bool*/false)), i);
     // i = 0
 
     std::vector<Value*> ArraySizeIdx =
@@ -349,7 +385,7 @@ std::pair<BasicBlock*, BasicBlock*>
     Builder.SetInsertPoint(inc);
 
     auto newi = Builder.CreateAdd
-      (Builder.CreateLoad(i), llvm::ConstantInt::get(TheContext, llvm::APInt(/*nbits*/64, 1, /*bool*/false)));
+      (Builder.CreateLoad(i), llvm::ConstantInt::get(TheContext, llvm::APInt(/*nbits*/Width, 1, /*bool*/false)));
 
     Builder.CreateStore(newi, i);
 
@@ -378,15 +414,15 @@ std::pair<BasicBlock*, BasicBlock*>
   } else if (st == "print") {
     // go through args and check if they are strings or ints
     for (auto arg : stmt.Children[0].Children) {
-      auto t = processExpr(arg);
+      auto t = InternalToRT(processExpr(arg), &Builder, TheContext);
       std::vector<Value*> args = {t};
+      // t->print(llvm::errs()); llvm::errs() << "\n";
       assert(t->getType()->isIntegerTy(64) || t->getType()->isPointerTy());
       if (t->getType()->isIntegerTy(64)) {
         Builder.CreateCall(TheModule->getFunction("printint"), args);
       } else {
         Builder.CreateCall(TheModule->getFunction("printstring"), args);
       }
-
     }
 
     return {BB, BB};
@@ -401,6 +437,7 @@ std::pair<BasicBlock*, BasicBlock*>
     assert(stmt.Children.size() == 2);
     auto v = checkVarNoDeref(stmt.Children[0]);
     auto e = processExpr(stmt.Children[1]);
+
     assert(v->getType()->getPointerElementType() == e->getType());
 
     Builder.CreateStore(e, v);
@@ -411,7 +448,7 @@ std::pair<BasicBlock*, BasicBlock*>
       assert(arraydecl.Children.size() == 2);
       auto name = arraydecl.Children[0].Attributes["val"];
       auto size = processExpr(arraydecl.Children[1]);
-      assert(size->getType()->isIntegerTy(64));
+      assert(size->getType()->isIntegerTy(Width));
       syms.insertArray(name, size);
     }
     return {BB, BB};
@@ -434,8 +471,8 @@ std::pair<BasicBlock*, BasicBlock*>
     auto i = processExpr(stmt.Children[1]);
     auto e = processExpr(stmt.Children[2]);
 
-    assert(i->getType() == llvm::Type::getInt64Ty(TheContext));
-    assert(e->getType() == llvm::Type::getInt64Ty(TheContext));
+    assert(i->getType() == llvm::Type::getIntNTy(TheContext, Width));
+    assert(e->getType() == llvm::Type::getIntNTy(TheContext, Width));
 
     std::vector<Value*> ArrayMemIdx =
     {
@@ -480,14 +517,28 @@ Value* Codegen::processCall(SyntaxTree& st) {
   int i = 0;
   std::vector<Value*> list;
 
+  bool mustConvert = ! (F->hasInternalLinkage());
+
   for (Argument& param : F->args()) {
     auto t = processExpr(args.Children[i++]);
+
+    if (mustConvert) {
+       t = InternalToRT(t, &Builder, TheContext);
+    }
 
     if (t->getType() != param.getType()) {
       t->getType()->print(llvm::errs());
       param.getType()->print(llvm::errs());
     }
+    // llvm::errs() << "HERE " << mustConvert << " " << F->getName() <<"\n";
+    // t->getType()->print(llvm::errs());
+    // llvm::errs() << "\n";
+    // param.getType()->print(llvm::errs());
+    // llvm::errs() << "\n";
+
     assert(t->getType() == param.getType());
+
+
     list.push_back(t);
   }
   return Builder.CreateCall(F, list);
@@ -527,7 +578,7 @@ Value* Codegen::processExpr(SyntaxTree& expr) { // Might return a llvm::Value* ?
     return processExpr(expr.Children[0]);
   }
   if (e == "num") {
-    return llvm::ConstantInt::get(TheContext, llvm::APInt(64, std::stoi(expr.Attributes["val"]), false));
+    return llvm::ConstantInt::get(TheContext, llvm::APInt(Width, std::stoi(expr.Attributes["val"]), false));
   } if (e == "id") {
     return checkVar(expr);
   } else if (e == "bool") {
@@ -565,7 +616,7 @@ Value* Codegen::processExpr(SyntaxTree& expr) { // Might return a llvm::Value* ?
     auto v = checkVarNoDeref(expr.Children[0]);
     auto i = processExpr(expr.Children[1]);
 
-    assert(i->getType() == llvm::Type::getInt64Ty(TheContext));
+    assert(i->getType() == llvm::Type::getIntNTy(TheContext, Width));
 
     std::vector<Value*> ArrayMemIdx =
     {
@@ -579,7 +630,8 @@ Value* Codegen::processExpr(SyntaxTree& expr) { // Might return a llvm::Value* ?
   } else if (e == "call") {
     return processCall(expr);
   }  else if (e == "input()") {
-    return Builder.CreateCall(TheModule->getFunction("input"));
+    return RTToInternal(Builder.CreateCall(TheModule->getFunction("input")),
+      &Builder, TheContext);
   } else if (e == "str") {
     auto str = unescape(expr.Attributes["val"]);
     str.pop_back();
@@ -666,7 +718,7 @@ Value* Codegen::processExpr(SyntaxTree& expr) { // Might return a llvm::Value* ?
     } else if (op == "-") {
       assert(opndtype == Type::t_int);
       return Builder.CreateSub(
-        llvm::ConstantInt::get(TheContext, llvm::APInt(64, 0, false)), opnd);
+        llvm::ConstantInt::get(TheContext, llvm::APInt(Width, 0, false)), opnd);
     } else {
       assert(false && "Unexpected unary operator");
     }
